@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Dual Audio Hub
+Comment=Stream synchronized audio to dual Bluetooth headphones on Linux
+Exec=dual_bt_app
+Icon=org.dualbt.DualAudioHub
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Mixer;Utility;
+Keywords=bluetooth;audio;dual;pipewire;stream;headphones;
