@@ -41,15 +41,19 @@ wpctl status
 
 ## 🚀 Installation & Setup
 
-### 1. Clone the Repository
+### ⚡ 1-Click Automated Installer (Recommended)
+
+To install the desktop application, launcher entry, app icon, and GNOME Shell Extension automatically:
+
 ```bash
 git clone https://github.com/Pardhu0547s/Dual_Bluetooth_Linux.git
 cd Dual_Bluetooth_Linux
+bash install.sh
 ```
 
 ---
 
-### Option A: Native Flutter Desktop App (Recommended)
+### Option A: Manual Flutter Desktop Build
 
 #### 1. Build the Application:
 ```bash
@@ -104,7 +108,7 @@ Then open your browser and navigate to:
 ## 📖 How to Use
 
 1. **Connect Bluetooth Devices**: Pair and connect both Bluetooth headphones/speakers in your system Bluetooth settings (or via `bluetoothctl connect <MAC>`).
-2. **Launch Application**: Open **Dual Audio Hub** (Desktop app, GNOME top bar menu, or Web dashboard).
+2. **Launch Application**: Open **Dual Audio Hub** (from Application Menu, Desktop app, GNOME top bar menu, or Web dashboard).
 3. **Select Sinks**:
    - **Device 1**: Choose Headphones A (Primary Output).
    - **Device 2**: Choose Headphones B (Secondary Output).
@@ -126,6 +130,7 @@ Dual_Bluetooth_Linux/
 │   │   └── ui/               # Desktop UI & Theme system
 │   └── linux/                # Linux GTK Runner files
 ├── gnome_extension/          # GNOME Shell Top-Bar Extension
+├── install.sh                # 1-Click Automated Installer script
 ├── dual_bt_transmitter.py    # Standalone Python Web GUI Dashboard
 ├── releases/                 # Pre-built release binaries
 └── README.md
@@ -152,8 +157,3 @@ To stop:
 ```bash
 killall pw-loopback
 ```
-
----
-
-## 📄 License
-MIT License
