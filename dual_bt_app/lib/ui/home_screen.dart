@@ -165,14 +165,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               height: 56,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF2A2E3D),
-                    Color(0xFF161820),
-                  ],
-                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.4),
@@ -180,16 +172,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     offset: const Offset(0, 4),
                   ),
                 ],
-                border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
+                border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.all(6.0),
-                  child: Image.asset(
-                    'assets/icon.png',
-                    fit: BoxFit.contain,
-                  ),
+                child: Image.asset(
+                  'assets/image.png',
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
