@@ -169,10 +169,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFFFFFFFF),
-                    Color(0xFFE2E8F0),
-                    Color(0xFF94A3B8),
-                    Color(0xFF64748B),
+                    Color(0xFF2A2E3D),
+                    Color(0xFF161820),
                   ],
                 ),
                 boxShadow: [
@@ -182,13 +180,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     offset: const Offset(0, 4),
                   ),
                 ],
-                border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+                border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
               ),
-              child: const Center(
-                child: Icon(
-                  Icons.headphones_rounded,
-                  size: 36,
-                  color: Color(0xFF1E293B),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.all(6.0),
+                  child: Image.asset(
+                    'assets/icon.png',
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ),
