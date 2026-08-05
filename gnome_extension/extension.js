@@ -69,8 +69,9 @@ export default class DualAudioExtension extends Extension {
 
     _getPythonScriptPath() {
         const candidatePaths = [
-            GLib.build_filenamev([this.path, '..', 'dual_bt_transmitter.py']),
             '/home/pavan/WorkSpace/Dual_B/dual_bt_transmitter.py',
+            GLib.build_filenamev([this.path, 'dual_bt_transmitter.py']),
+            GLib.build_filenamev([this.path, '..', 'dual_bt_transmitter.py']),
         ];
         for (const p of candidatePaths) {
             if (GLib.file_test(p, GLib.FileTest.EXISTS)) return p;
@@ -125,13 +126,14 @@ export default class DualAudioExtension extends Extension {
     _launchApp() {
         try {
             const appPath = this._getAppBinaryPath();
-            if (appPath) {
-                Gio.Subprocess.new([appPath], Gio.SubprocessFlags.NONE);
-            } else {
-                // Fallback to Python web dashboard
+            let cmd = appPath;
+            if (!cmd) {
                 const scriptPath = this._getPythonScriptPath();
-                Gio.Subprocess.new(['python3', scriptPath], Gio.SubprocessFlags.NONE);
+                cmd = `python3 ${scriptPath}`;
             }
+
+            const appInfo = Gio.AppInfo.create_from_commandline(cmd, 'Dual Audio Hub', Gio.AppInfoCreateFlags.NONE);
+            appInfo.launch([], null);
         } catch (e) {
             console.error(`[Dual Audio Hub] Error launching application: ${e}`);
         }
