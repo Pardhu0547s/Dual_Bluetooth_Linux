@@ -4,7 +4,7 @@ version: '1.0.0'
 summary: Stream synchronized audio to dual Bluetooth headphones on Linux
 description: |
   Dual Audio Hub is a Linux application built with Flutter & PipeWire to stream
-  audio to two Bluetooth devices simultaneously with per-device delay compensation.
+  audio to two Bluetooth devices simultaneously with independent volume control.
 
 grade: stable
 confinement: strict
@@ -15,11 +15,12 @@ apps:
     extensions: [gnome]
     plugs:
       - audio-playback
+      - audio-record
       - bluetooth-control
       - network
 
 parts:
   dual-audio-hub:
     plugin: flutter
-    source: .
+    source: dual_bt_app
     flutter-target: lib/main.dart

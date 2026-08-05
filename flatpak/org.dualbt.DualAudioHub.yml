@@ -9,6 +9,7 @@ finish-args:
   - --socket=x11
   - --socket=wayland
   - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
   - --device=dri
   - --share=network
   - --talk-name=org.bluez
@@ -16,10 +17,11 @@ modules:
   - name: dual_bt_app
     buildsystem: simple
     build-commands:
-      - flutter build linux --release
-      - cp -r build/linux/x64/release/bundle/* /app/
+      - cd dual_bt_app && flutter build linux --release
+      - cp -r dual_bt_app/build/linux/x64/release/bundle/* /app/
       - install -D flatpak/org.dualbt.DualAudioHub.desktop /app/share/applications/org.dualbt.DualAudioHub.desktop
       - install -D flatpak/org.dualbt.DualAudioHub.metainfo.xml /app/share/metainfo/org.dualbt.DualAudioHub.metainfo.xml
+      - install -D icon.png /app/share/icons/hicolor/512x512/apps/org.dualbt.DualAudioHub.png
     sources:
       - type: dir
         path: ..
