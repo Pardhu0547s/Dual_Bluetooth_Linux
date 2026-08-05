@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/audio_node.dart';
 import '../services/pipewire_service.dart';
@@ -27,17 +28,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    _service.onDeviceDisconnected = (deviceName) {
-      if (mounted) {
-        setState(() {});
-        _loadSinks();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚡ Device "$deviceName" disconnected. Restored normal audio output.'),
-            backgroundColor: Colors.amber.shade900,
-          ),
-        );
-      }
+    _service.onDeviceDisconnected = (deviceName) async {
+      print('Device $deviceName disconnected. Stopping dual stream, restoring default audio, and closing app.');
+      await _service.stopDualStream();
+      exit(0);
     };
 
     _loadSinks();
@@ -58,18 +52,30 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _isLoading = false;
 
       if (_sinks.isNotEmpty) {
-        _selectedSink1 ??= _sinks.first;
-        _selectedSink2 ??= _sinks.length > 1 ? _sinks[1] : _sinks.first;
+        if (_selectedSink1 == null || !_sinks.any((s) => s.name == _selectedSink1!.name)) {
+          _selectedSink1 = _sinks.first;
+        } else {
+          _selectedSink1 = _sinks.firstWhere((s) => s.name == _selectedSink1!.name);
+        }
+
+        if (_selectedSink2 == null || !_sinks.any((s) => s.name == _selectedSink2!.name)) {
+          _selectedSink2 = _sinks.length > 1 ? _sinks[1] : _sinks.first;
+        } else {
+          _selectedSink2 = _sinks.firstWhere((s) => s.name == _selectedSink2!.name);
+        }
+      } else {
+        _selectedSink1 = null;
+        _selectedSink2 = null;
       }
     });
 
     if (_selectedSink1 != null) {
       final v1 = await _service.getVolume(_selectedSink1!);
-      setState(() => _vol1 = v1);
+      if (mounted) setState(() => _vol1 = v1);
     }
     if (_selectedSink2 != null) {
       final v2 = await _service.getVolume(_selectedSink2!);
-      setState(() => _vol2 = v2);
+      if (mounted) setState(() => _vol2 = v2);
     }
   }
 

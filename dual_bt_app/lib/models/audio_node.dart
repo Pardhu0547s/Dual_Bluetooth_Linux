@@ -24,6 +24,14 @@ class AudioSink {
       isBluetooth: isBt,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioSink && runtimeType == other.runtimeType && (id == other.id || name == other.name);
+
+  @override
+  int get hashCode => name.hashCode;
 }
 
 class BluetoothDevice {
