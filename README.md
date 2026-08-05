@@ -1,47 +1,57 @@
-# Dual Bluetooth Audio Hub for Linux 🎧🎧
+# Dual Bluetooth Audio Hub 🎧🎧
 
-[![Linux](https://img.shields.io/badge/OS-Linux-orange.svg)](https://www.kernel.org/)
-[![PipeWire](https://img.shields.io/badge/Audio-PipeWire-blue.svg)](https://pipewire.org/)
-[![Flutter](https://img.shields.io/badge/UI-Flutter%20Desktop-02569B.svg)](https://flutter.dev)
+[![Linux](https://img.shields.io/badge/Linux-PipeWire-FCC624.svg?logo=linux&logoColor=black)](https://pipewire.org/)
+[![macOS](https://img.shields.io/badge/macOS-CoreAudio-000000.svg?logo=apple&logoColor=white)](https://developer.apple.com/documentation/coreaudio)
+[![Windows](https://img.shields.io/badge/Windows-WASAPI-0078D6.svg?logo=windows&logoColor=white)](https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi)
+[![Flutter](https://img.shields.io/badge/UI-Flutter-02569B.svg?logo=flutter&logoColor=white)](https://flutter.dev)
 [![GNOME](https://img.shields.io/badge/Extension-GNOME%20Shell-4A154B.svg)](https://extensions.gnome.org/)
-[![Python](https://img.shields.io/badge/Backend-Python%203-3776AB.svg)](https://www.python.org/)
 
-**Dual Bluetooth Audio Hub** is a Linux application, GNOME extension, and utility that connects two Bluetooth audio devices (headphones, earbuds, or speakers) simultaneously and streams the exact same audio signal to both devices in sync.
+**Dual Audio Hub** is a cross-platform application that streams the same audio to two Bluetooth devices (headphones, earbuds, or speakers) simultaneously — with independent volume control per device.
 
 ---
 
 ## ✨ Features
 
-- 🎧 **Simultaneous Dual Streaming**: Stream audio to 2 Bluetooth devices (A2DP) at the same time.
-- 🎛️ **PipeWire Virtual Master Router**: Dynamically creates a virtual master sink (`Dual_Master_Sink`) and switches system default audio output so all apps (YouTube, Spotify, VLC, Chrome, system sound) stream to both headsets effortlessly.
-- 🔊 **Individual Volume Control**: Adjust the volume of Headphones A and Headphones B independently (0% – 100%).
-- 🛡️ **Auto Disconnect Protection**: Automatically detects if a Bluetooth device is turned off or disconnected, stops streaming, restores your default audio output (e.g., Laptop Speakers), and safely turns off.
-- 📱 **Native Flutter Desktop App**: Modern glassmorphic desktop interface with dark theme and live connection indicators.
-- 🧩 **GNOME Shell Top-Bar Extension**: 1-click toggle and dashboard launcher right inside your GNOME system panel.
-- 🌐 **Python Web Dashboard**: Lightweight fallback web dashboard accessible via browser (`http://localhost:5050`).
+| Feature | Linux | macOS | Windows | Android/iOS |
+|:---|:---:|:---:|:---:|:---:|
+| Dual Bluetooth Streaming | ✅ | ✅ | ✅ | Guide Only |
+| Individual Volume Control | ✅ | ✅ | ✅ | — |
+| Auto Disconnect Detection | ✅ | ✅ | ✅ | — |
+| Default Sink Restoration | ✅ | ✅ | ✅ | — |
+| GNOME Shell Extension | ✅ | — | — | — |
+| Python Web Dashboard | ✅ | ✅ | ✅ | — |
+
+### Key Highlights:
+- 🎛️ **Virtual Master Audio Router**: Creates a virtual master sink and switches system default audio output so all apps (YouTube, Spotify, VLC, Chrome) stream to both headsets effortlessly
+- 🔊 **Independent Volume**: Adjust each headphone's volume separately (0% – 100%)
+- 🛡️ **Auto Protection**: Detects Bluetooth disconnection, stops streaming, restores normal audio, and exits cleanly
+- 🎨 **Professional Dark UI**: Consistent glassmorphic design across every platform
 
 ---
 
-## 📋 Prerequisites & System Requirements
+## 📋 System Requirements
 
-Your Linux distribution should use **PipeWire** (standard default on Ubuntu 22.04+, Fedora 34+, Arch Linux, Debian 12+, Pop!_OS):
+### Linux
+- PipeWire + WirePlumber (standard on Ubuntu 22.04+, Fedora 34+, Arch, Debian 12+)
+- BlueZ (`bluetoothctl`)
 
-### System Packages:
-- `pipewire` & `wireplumber`
-- `bluez` / `bluetoothctl`
-- `python3`
-- `flutter` *(Only if compiling the native desktop app from source)*
+### macOS
+- macOS 12 Monterey or later
+- CoreAudio (built-in)
 
-To check if PipeWire is running:
-```bash
-wpctl status
-```
+### Windows
+- Windows 10/11
+- WASAPI (built-in)
+
+### Mobile (Guide Only)
+- **Android**: Samsung Galaxy with Dual Audio, or Android 13+ with LE Audio hardware
+- **iOS**: AirPods / Beats with Audio Sharing (iPhone 8+, iOS 13+)
 
 ---
 
-## 🚀 Installation & Usage Options
+## 🚀 Installation
 
-First, clone the repository:
+### Clone the Repository
 ```bash
 git clone https://github.com/Pardhu0547s/Dual_Bluetooth_Linux.git
 cd Dual_Bluetooth_Linux
@@ -49,88 +59,135 @@ cd Dual_Bluetooth_Linux
 
 ---
 
-### Option 1: Native Flutter Desktop App (Recommended)
+### Option 1: Flutter Desktop App (All Platforms)
 
-#### 1. Build the Application:
+#### Build
 ```bash
 cd dual_bt_app
+
+# Linux
 flutter build linux --release
+
+# macOS
+flutter build macos --release
+
+# Windows
+flutter build windows --release
 ```
 
-#### 2. Run the Desktop App:
+#### Run
 ```bash
+# Linux
 ./build/linux/x64/release/bundle/dual_bt_app
+
+# macOS
+open build/macos/Build/Products/Release/dual_bt_app.app
+
+# Windows
+.\build\windows\x64\runner\Release\dual_bt_app.exe
 ```
 
 ---
 
-### Option 2: GNOME Shell Top-Bar Extension (For GNOME 45 / 46 / 47 / 50+)
+### Option 2: GNOME Shell Extension (Linux GNOME 45–50+)
 
-If you use Fedora, Ubuntu, or any GNOME desktop, you can install the top-bar extension:
-
-#### 1. Install Extension Files:
 ```bash
+# Install extension files
 mkdir -p ~/.local/share/gnome-shell/extensions/
 cp -r gnome_extension ~/.local/share/gnome-shell/extensions/dual-audio-hub@pardhu0547s.github.io
-```
 
-#### 2. Enable GNOME Version Mismatch Bypass (Recommended for Fedora / Rawhide):
-```bash
+# Bypass version validation (recommended for Fedora / Rawhide)
 gsettings set org.gnome.shell disable-extension-version-validation true
-```
 
-#### 3. Enable Extension:
-```bash
+# Enable extension
 gnome-extensions enable dual-audio-hub@pardhu0547s.github.io
 ```
-
-A **Headphones Icon** will now appear in your GNOME top status bar for 1-click quick toggled dual audio streaming!
 
 ---
 
 ### Option 3: Python Web Dashboard (No Build Required)
 
-If you don't have Flutter installed, you can launch the Python web interface:
-
 ```bash
 python3 dual_bt_transmitter.py
 ```
+Open **[http://localhost:5050](http://localhost:5050)** in your browser.
 
-Then open your browser and navigate to:
-👉 **[http://localhost:5050](http://localhost:5050)**
+---
+
+### Option 4: Android / iOS (Guide Only)
+
+```bash
+cd dual_bt_app
+
+# Android APK
+flutter build apk --release
+
+# iOS (requires macOS + Xcode)
+flutter build ios --release
+```
+
+> **Note**: The mobile app shows step-by-step instructions for enabling your device's built-in dual audio features (Samsung Dual Audio, Apple Audio Sharing, LE Audio Auracast). Programmatic dual routing is not supported on mobile platforms.
 
 ---
 
 ## 📖 How to Use
 
-1. **Connect Bluetooth Devices**: Pair and connect both Bluetooth headphones/speakers in your Linux system Bluetooth settings (or via `bluetoothctl connect <MAC>`).
-2. **Launch Application**: Open the **Dual Audio Hub** (Flutter app, GNOME top bar menu, or Web interface).
-3. **Select Sinks**:
-   - **Device 1**: Choose Headphones A (e.g. *Boult Audio Maverick*).
-   - **Device 2**: Choose Headphones B (e.g. *trüke Buds Q1 Plus*).
-4. **Start Streaming**: Click **▶ Start Dual Bluetooth Stream**.
-5. **Adjust Volume**: Slide the **Device Volume** sliders to set custom volumes for each headphone independently.
+1. **Connect** both Bluetooth headphones/speakers in your system Bluetooth settings
+2. **Launch** Dual Audio Hub (Desktop app, GNOME extension, or Web dashboard)
+3. **Select** Device 1 and Device 2 from the dropdown sinks
+4. **Start** dual streaming with the master control button
+5. **Adjust** individual volume sliders as needed
 
 ---
 
-## 🛠️ CLI / Terminal Pure Commands
+## 🏗️ Architecture
 
-If you prefer using pure terminal commands without a GUI:
-
-```bash
-# 1. Start Master Sink (outputs to Target 1)
-pw-loopback --name Dual_Master_Sink -i 'node.name=Dual_Master_Sink media.class=Audio/Sink node.description="Dual Bluetooth Master"' --playback <TARGET_SINK_1_NAME> &
-
-# 2. Start Slave Stream (captures from Master, outputs to Target 2)
-pw-loopback --name Dual_Slave_Stream --capture Dual_Master_Sink --playback <TARGET_SINK_2_NAME> &
-
-# 3. Set Dual_Master_Sink as default output device
-wpctl set-default <DUAL_MASTER_SINK_ID>
+```
+                    ┌──────────────────────────┐
+                    │   Flutter UI (Dart)       │
+                    │   Same polished UI on     │
+                    │   every platform          │
+                    └──────────┬───────────────┘
+                               │ Platform Channels
+         ┌─────────────────────┼─────────────────────┐
+         ▼                     ▼                     ▼
+  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+  │ Linux Engine │    │ macOS Engine │    │ Windows Eng. │
+  ├──────────────┤    ├──────────────┤    ├──────────────┤
+  │ PipeWire     │    │ CoreAudio    │    │ WASAPI       │
+  │ pw-loopback  │    │ Aggregate    │    │ Loopback +   │
+  │ wpctl        │    │ Multi-Output │    │ Dual Render  │
+  └──────────────┘    └──────────────┘    └──────────────┘
 ```
 
-To stop:
-```bash
-killall pw-loopback
+---
+
+## 📁 Project Structure
+
+```
+Dual_Bluetooth_Linux/
+├── dual_bt_app/              # Flutter cross-platform desktop app
+│   ├── lib/
+│   │   ├── main.dart
+│   │   ├── models/           # AudioSink data model
+│   │   ├── services/         # Platform-specific audio backends
+│   │   │   ├── audio_service.dart          # Abstract interface
+│   │   │   ├── audio_service_factory.dart  # Platform factory
+│   │   │   ├── linux_audio_service.dart    # PipeWire backend
+│   │   │   ├── macos_audio_service.dart    # CoreAudio backend
+│   │   │   ├── windows_audio_service.dart  # WASAPI backend
+│   │   │   └── mobile_guide_service.dart   # Android/iOS stub
+│   │   └── ui/               # Shared polished UI
+│   │       ├── theme.dart             # Design system
+│   │       ├── home_screen.dart       # Main dashboard
+│   │       └── mobile_guide_screen.dart  # Mobile instructions
+│   ├── linux/                # Linux GTK runner
+│   ├── macos/                # macOS runner + CoreAudio plugin
+│   ├── windows/              # Windows runner + WASAPI plugin
+│   └── android/ & ios/       # Mobile runners
+├── gnome_extension/          # GNOME Shell top-bar extension
+├── dual_bt_transmitter.py    # Python web dashboard fallback
+└── README.md
 ```
 
 ---
