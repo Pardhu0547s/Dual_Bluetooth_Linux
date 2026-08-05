@@ -135,11 +135,26 @@ class DualAudioEngine:
                 subprocess.run(['wpctl', 'set-default', str(master_node['id'])])
             
             self.is_active = True
+            self._start_disconnect_monitor(target_sink1, target_sink2)
             return True
         except Exception as e:
             print(f"Failed to start dual stream: {e}")
             self.stop_dual_stream()
             return False
+
+    def _start_disconnect_monitor(self, target1, target2):
+        def monitor():
+            while self.is_active:
+                time.sleep(2)
+                if not self.is_active:
+                    break
+                sinks = self.get_pipewire_nodes()
+                sink_names = {s['name'] for s in sinks}
+                if str(target1) not in sink_names or str(target2) not in sink_names:
+                    print("Device disconnect detected in Python engine. Restoring default sink.")
+                    self.stop_dual_stream()
+                    break
+        threading.Thread(target=monitor, daemon=True).start()
 
     def stop_dual_stream(self):
         """Stops active loopback streams."""

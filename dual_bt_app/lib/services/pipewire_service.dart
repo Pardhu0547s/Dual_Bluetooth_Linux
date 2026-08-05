@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../models/audio_node.dart';
@@ -6,6 +7,8 @@ class PipeWireService {
   final List<Process> _activeLoopbacks = [];
   bool _isStreaming = false;
   int? _originalDefaultSinkId;
+  Timer? _disconnectTimer;
+  Function(String deviceName)? onDeviceDisconnected;
 
   bool get isStreaming => _isStreaming;
 
@@ -151,6 +154,10 @@ class PipeWireService {
       }
 
       _isStreaming = true;
+
+      // Start periodic Bluetooth disconnect monitor
+      _startDisconnectMonitor(target1, target2);
+
       return true;
     } catch (e) {
       print('Error starting dual stream: $e');
@@ -159,7 +166,29 @@ class PipeWireService {
     }
   }
 
+  void _startDisconnectMonitor(AudioSink target1, AudioSink target2) {
+    _disconnectTimer?.cancel();
+    _disconnectTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!_isStreaming) return;
+      final currentSinks = await getAudioSinks();
+      final currentNames = currentSinks.map((s) => s.name).toSet();
+
+      bool t1Active = currentNames.contains(target1.name);
+      bool t2Active = currentNames.contains(target2.name);
+
+      if (!t1Active || !t2Active) {
+        final disconnectedName = !t1Active ? target1.description : target2.description;
+        print('Device disconnected: $disconnectedName. Stopping dual stream and restoring default sink.');
+        await stopDualStream();
+        onDeviceDisconnected?.call(disconnectedName);
+      }
+    });
+  }
+
   Future<void> stopDualStream() async {
+    _disconnectTimer?.cancel();
+    _disconnectTimer = null;
+
     if (_originalDefaultSinkId != null) {
       try {
         await Process.run('wpctl', ['set-default', _originalDefaultSinkId!.toString()]);

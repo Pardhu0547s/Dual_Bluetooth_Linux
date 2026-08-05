@@ -26,6 +26,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+
+    _service.onDeviceDisconnected = (deviceName) {
+      if (mounted) {
+        setState(() {});
+        _loadSinks();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚡ Device "$deviceName" disconnected. Restored normal audio output.'),
+            backgroundColor: Colors.amber.shade900,
+          ),
+        );
+      }
+    };
+
     _loadSinks();
   }
 
