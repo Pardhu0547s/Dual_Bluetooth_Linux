@@ -35,6 +35,28 @@ class PipeWireService {
     }
   }
 
+  Future<void> setVolume(AudioSink sink, double volumePercent) async {
+    try {
+      final double volVal = (volumePercent / 100.0).clamp(0.0, 1.0);
+      await Process.run('wpctl', ['set-volume', sink.id.toString(), volVal.toStringAsFixed(2)]);
+    } catch (e) {
+      print('Error setting volume for sink ${sink.id}: $e');
+    }
+  }
+
+  Future<double> getVolume(AudioSink sink) async {
+    try {
+      final res = await Process.run('wpctl', ['get-volume', sink.id.toString()]);
+      final String out = (res.stdout as String).trim();
+      final match = RegExp(r'Volume:\s*([\d\.]+)').firstMatch(out);
+      if (match != null) {
+        final double val = double.parse(match.group(1)!);
+        return (val * 100.0).clamp(0.0, 100.0);
+      }
+    } catch (_) {}
+    return 100.0;
+  }
+
   Future<int?> _getDefaultSinkId() async {
     try {
       final dump = await Process.run('pw-dump', []);
@@ -53,7 +75,6 @@ class PipeWireService {
 
   Future<void> _fixSlaveStreamLinks() async {
     try {
-      // Disconnect any wrong auto-link to bluetooth microphone
       final linksResult = await Process.run('pw-link', ['-l']);
       final String linksOutput = linksResult.stdout as String;
 
@@ -68,7 +89,6 @@ class PipeWireService {
         }
       }
 
-      // Explicitly connect Master Monitor to Slave Inputs
       await Process.run('pw-link', ['Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_FL']);
       await Process.run('pw-link', ['Dual_Master_Sink:monitor_FR', 'input.Dual_Slave_Stream:input_FR']);
       await Process.run('pw-link', ['Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_MONO']);
@@ -118,7 +138,6 @@ class PipeWireService {
 
       await Future.delayed(const Duration(milliseconds: 600));
 
-      // Fix WirePlumber auto-link to microphone if needed
       await _fixSlaveStreamLinks();
 
       // 3. Find Master Sink Node ID & set as default sink in PipeWire

@@ -50,6 +50,16 @@ class DualAudioEngine:
             print(f"Error reading PipeWire nodes: {e}")
             return []
 
+    def set_volume(self, sink_id, volume_percent):
+        """Sets volume for a specific PipeWire sink."""
+        try:
+            vol_val = max(0.0, min(1.0, float(volume_percent) / 100.0))
+            subprocess.run(['wpctl', 'set-volume', str(sink_id), f"{vol_val:.2f}"])
+            return True
+        except Exception as e:
+            print(f"Error setting volume: {e}")
+            return False
+
     def get_bluetooth_devices(self):
         """Lists Bluetooth devices using bluetoothctl."""
         try:
