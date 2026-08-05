@@ -67,11 +67,40 @@ export default class DualAudioExtension extends Extension {
         this._activeSubprocesses = [];
     }
 
+    _getPythonScriptPath() {
+        const candidatePaths = [
+            GLib.build_filenamev([this.path, '..', 'dual_bt_transmitter.py']),
+            '/home/pavan/WorkSpace/Dual_B/dual_bt_transmitter.py',
+        ];
+        for (const p of candidatePaths) {
+            if (GLib.file_test(p, GLib.FileTest.EXISTS)) return p;
+        }
+        return '/home/pavan/WorkSpace/Dual_B/dual_bt_transmitter.py';
+    }
+
+    _getAppBinaryPath() {
+        const candidatePaths = [
+            '/home/pavan/WorkSpace/Dual_B/dual_bt_app/build/linux/x64/debug/bundle/dual_bt_app',
+            '/home/pavan/WorkSpace/Dual_B/dual_bt_app/build/linux/x64/release/bundle/dual_bt_app',
+            GLib.build_filenamev([this.path, '..', 'dual_bt_app', 'build', 'linux', 'x64', 'debug', 'bundle', 'dual_bt_app']),
+            GLib.build_filenamev([this.path, '..', 'dual_bt_app', 'build', 'linux', 'x64', 'release', 'bundle', 'dual_bt_app']),
+        ];
+
+        for (const p of candidatePaths) {
+            if (GLib.file_test(p, GLib.FileTest.EXISTS)) return p;
+        }
+
+        const sysProg = GLib.find_program_in_path('dual_bt_app');
+        if (sysProg) return sysProg;
+
+        return null;
+    }
+
     _startDualStream() {
         try {
-            // Asynchronous non-blocking subprocess execution
+            const scriptPath = this._getPythonScriptPath();
             const proc = Gio.Subprocess.new(
-                ['python3', GLib.build_filenamev([this.path, '..', 'dual_bt_transmitter.py'])],
+                ['python3', scriptPath],
                 Gio.SubprocessFlags.NONE
             );
             this._activeSubprocesses.push(proc);
@@ -95,12 +124,13 @@ export default class DualAudioExtension extends Extension {
 
     _launchApp() {
         try {
-            const appPath = GLib.build_filenamev([this.path, '..', 'dual_bt_app', 'build', 'linux', 'x64', 'release', 'bundle', 'dual_bt_app']);
-            if (GLib.file_test(appPath, GLib.FileTest.EXISTS)) {
+            const appPath = this._getAppBinaryPath();
+            if (appPath) {
                 Gio.Subprocess.new([appPath], Gio.SubprocessFlags.NONE);
             } else {
-                // Fallback to debug binary or python dashboard
-                Gio.Subprocess.new(['python3', GLib.build_filenamev([this.path, '..', 'dual_bt_transmitter.py'])], Gio.SubprocessFlags.NONE);
+                // Fallback to Python web dashboard
+                const scriptPath = this._getPythonScriptPath();
+                Gio.Subprocess.new(['python3', scriptPath], Gio.SubprocessFlags.NONE);
             }
         } catch (e) {
             console.error(`[Dual Audio Hub] Error launching application: ${e}`);
