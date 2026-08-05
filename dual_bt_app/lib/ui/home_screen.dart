@@ -1,11 +1,8 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../models/audio_node.dart';
-import '../services/audio_service.dart';
-import '../services/audio_service_factory.dart';
+import '../services/linux_audio_service.dart';
 import 'theme.dart';
-import 'mobile_guide_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,55 +11,30 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  late final AudioService _service;
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  final LinuxAudioService _service = LinuxAudioService();
   List<AudioSink> _sinks = [];
   AudioSink? _selectedSink1;
   AudioSink? _selectedSink2;
-  double _vol1 = 80;
-  double _vol2 = 80;
+  double _vol1 = 100;
+  double _vol2 = 100;
   bool _isLoading = false;
-
-  late final AnimationController _pulseController;
-  late final AnimationController _slideController;
-  late final Animation<double> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
-    _service = AudioServiceFactory.create();
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-
-    _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _slideAnimation = CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    );
-
-    if (!_service.supportsDualAudio) return;
 
     _service.onDeviceDisconnected = (deviceName) async {
+      print('Bluetooth device $deviceName disconnected. Restoring audio output and closing app.');
       await _service.stopDualStream();
-      if (!kIsWeb && (Platform.isLinux || Platform.isMacOS || Platform.isWindows)) {
-        exit(0);
-      }
+      exit(0);
     };
 
     _loadSinks();
-    _slideController.forward();
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
-    _slideController.dispose();
     _service.stopDualStream();
     super.dispose();
   }
@@ -108,7 +80,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       setState(() {});
     } else {
       if (_selectedSink1 == null || _selectedSink2 == null) {
-        _showSnackBar('Please select two audio output devices.', AppTheme.warning);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select two audio output sinks.')),
+        );
         return;
       }
 
@@ -120,167 +94,56 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       setState(() => _isLoading = false);
 
       if (!success) {
-        _showSnackBar('Failed to start dual audio stream.', AppTheme.error);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to start PipeWire dual stream.')),
+          );
+        }
       } else {
         await _service.setVolume(_selectedSink1!, _vol1);
         await _service.setVolume(_selectedSink2!, _vol2);
-        _showSnackBar('Dual audio streaming active! 🎧', AppTheme.success);
       }
       setState(() {});
     }
   }
 
-  void _showSnackBar(String message, Color color) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Container(
-              width: 4,
-              height: 28,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message, style: AppTheme.bodyMd.copyWith(color: AppTheme.textPrimary))),
-          ],
-        ),
-        backgroundColor: AppTheme.surface,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (!_service.supportsDualAudio) {
-      return const MobileGuideScreen();
-    }
-
     final isStreaming = _service.isStreaming;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWide = screenWidth > 900;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppTheme.backgroundGlow),
-        child: SafeArea(
-          child: FadeTransition(
-            opacity: _slideAnimation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.03),
-                end: Offset.zero,
-              ).animate(_slideAnimation),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isWide ? 48 : 24,
-                  vertical: 24,
-                ),
-                child: Column(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28.0),
+          child: Column(
+            children: [
+              // Top Header
+              _buildHeader(isStreaming),
+              const SizedBox(height: 24),
+
+              // Device Cards Side-by-Side Grid
+              Expanded(
+                child: Row(
                   children: [
-                    // ─── Header ──────────────────────────────
-                    _buildHeader(isStreaming),
-                    const SizedBox(height: 32),
-
-                    // ─── Device Cards ────────────────────────
+                    // Device 1 Card (Dark Theme)
                     Expanded(
-                      child: isWide
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(child: _buildDeviceCard(
-                                  index: 1,
-                                  icon: Icons.headphones_rounded,
-                                  selectedSink: _selectedSink1,
-                                  onSinkChanged: (s) async {
-                                    setState(() => _selectedSink1 = s);
-                                    if (s != null) {
-                                      final v = await _service.getVolume(s);
-                                      setState(() => _vol1 = v);
-                                    }
-                                  },
-                                  volume: _vol1,
-                                  onVolumeChanged: (v) {
-                                    setState(() => _vol1 = v);
-                                    if (_selectedSink1 != null) _service.setVolume(_selectedSink1!, v);
-                                  },
-                                )),
-                                const SizedBox(width: 20),
-                                // Center connector
-                                _buildConnector(isStreaming),
-                                const SizedBox(width: 20),
-                                Expanded(child: _buildDeviceCard(
-                                  index: 2,
-                                  icon: Icons.earbuds_rounded,
-                                  selectedSink: _selectedSink2,
-                                  onSinkChanged: (s) async {
-                                    setState(() => _selectedSink2 = s);
-                                    if (s != null) {
-                                      final v = await _service.getVolume(s);
-                                      setState(() => _vol2 = v);
-                                    }
-                                  },
-                                  volume: _vol2,
-                                  onVolumeChanged: (v) {
-                                    setState(() => _vol2 = v);
-                                    if (_selectedSink2 != null) _service.setVolume(_selectedSink2!, v);
-                                  },
-                                )),
-                              ],
-                            )
-                          : ListView(
-                              children: [
-                                _buildDeviceCard(
-                                  index: 1,
-                                  icon: Icons.headphones_rounded,
-                                  selectedSink: _selectedSink1,
-                                  onSinkChanged: (s) async {
-                                    setState(() => _selectedSink1 = s);
-                                    if (s != null) {
-                                      final v = await _service.getVolume(s);
-                                      setState(() => _vol1 = v);
-                                    }
-                                  },
-                                  volume: _vol1,
-                                  onVolumeChanged: (v) {
-                                    setState(() => _vol1 = v);
-                                    if (_selectedSink1 != null) _service.setVolume(_selectedSink1!, v);
-                                  },
-                                ),
-                                const SizedBox(height: 16),
-                                _buildDeviceCard(
-                                  index: 2,
-                                  icon: Icons.earbuds_rounded,
-                                  selectedSink: _selectedSink2,
-                                  onSinkChanged: (s) async {
-                                    setState(() => _selectedSink2 = s);
-                                    if (s != null) {
-                                      final v = await _service.getVolume(s);
-                                      setState(() => _vol2 = v);
-                                    }
-                                  },
-                                  volume: _vol2,
-                                  onVolumeChanged: (v) {
-                                    setState(() => _vol2 = v);
-                                    if (_selectedSink2 != null) _service.setVolume(_selectedSink2!, v);
-                                  },
-                                ),
-                              ],
-                            ),
+                      child: _buildDeviceCard1(),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(width: 24),
 
-                    // ─── Master Control Button ───────────────
-                    _buildMasterButton(isStreaming),
+                    // Device 2 Card (Light High-Contrast Theme)
+                    Expanded(
+                      child: _buildDeviceCard2(),
+                    ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 24),
+
+              // Master Control Button
+              _buildMasterButton(isStreaming),
+            ],
           ),
         ),
       ),
@@ -288,262 +151,203 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  HEADER
+  //  TOP HEADER
   // ═══════════════════════════════════════════════════════════════
   Widget _buildHeader(bool isStreaming) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // App icon
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            gradient: AppTheme.primaryGradient,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.accent.withOpacity(0.25),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
+        Row(
+          children: [
+            // 3D Metallic Silver App Icon Container
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFFFFFFF),
+                    Color(0xFFE2E8F0),
+                    Color(0xFF94A3B8),
+                    Color(0xFF64748B),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.4),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
               ),
-            ],
-          ),
-          child: const Icon(Icons.bluetooth_audio_rounded, color: Colors.white, size: 26),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Dual Audio Hub', style: AppTheme.headingLg),
-              const SizedBox(height: 2),
-              Text(
-                _service.platformName,
-                style: AppTheme.bodySm.copyWith(color: AppTheme.accent.withOpacity(0.8)),
+              child: const Center(
+                child: Icon(
+                  Icons.headphones_rounded,
+                  size: 36,
+                  color: Color(0xFF1E293B),
+                ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Dual Audio Hub',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                Text(
+                  'Linux (PipeWire)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade400,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        // Status Chip
-        _buildStatusChip(isStreaming),
-        const SizedBox(width: 8),
-        // Refresh button
-        _buildIconButton(
-          icon: Icons.refresh_rounded,
-          tooltip: 'Rescan Devices',
-          onTap: _loadSinks,
+        Row(
+          children: [
+            // Status Badge Pill
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B1E26),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF2E3342)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isStreaming ? Colors.greenAccent : Colors.white70,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isStreaming ? 'STREAMING' : 'IDLE',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isStreaming ? Colors.greenAccent : Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            // Refresh Button
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B1E26),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF2E3342)),
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 20),
+                tooltip: 'Rescan PipeWire Sinks',
+                onPressed: _loadSinks,
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildStatusChip(bool isStreaming) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+  // ═══════════════════════════════════════════════════════════════
+  //  DEVICE 1 CARD (Dark Theme)
+  // ═══════════════════════════════════════════════════════════════
+  Widget _buildDeviceCard1() {
+    final sink = _selectedSink1;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: isStreaming ? AppTheme.success.withOpacity(0.1) : AppTheme.surfaceLight.withOpacity(0.5),
-        border: Border.all(
-          color: isStreaming ? AppTheme.success.withOpacity(0.3) : AppTheme.surfaceBorder,
-        ),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, _) {
-              return Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isStreaming ? AppTheme.success : AppTheme.textMuted,
-                  boxShadow: isStreaming
-                      ? [BoxShadow(
-                          color: AppTheme.success.withOpacity(_pulseController.value * 0.8),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        )]
-                      : [],
-                ),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-          Text(
-            isStreaming ? 'STREAMING' : 'IDLE',
-            style: AppTheme.label.copyWith(
-              color: isStreaming ? AppTheme.success : AppTheme.textMuted,
-              fontSize: 10,
-            ),
+        color: AppTheme.cardDark,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.cardDarkBorder, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildIconButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: AppTheme.glassDecoration(),
-          child: Icon(icon, color: AppTheme.textSecondary, size: 20),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  CENTER CONNECTOR (desktop wide layout)
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildConnector(bool isStreaming) {
-    return SizedBox(
-      width: 48,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, _) {
-                return Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: isStreaming ? AppTheme.activeGradient : null,
-                    color: isStreaming ? null : AppTheme.surfaceLight,
-                    boxShadow: isStreaming
-                        ? [BoxShadow(
-                            color: AppTheme.success.withOpacity(0.3 + _pulseController.value * 0.2),
-                            blurRadius: 16,
-                            spreadRadius: 2,
-                          )]
-                        : [],
-                  ),
-                  child: Icon(
-                    isStreaming ? Icons.link_rounded : Icons.link_off_rounded,
-                    color: isStreaming ? Colors.white : AppTheme.textMuted,
-                    size: 20,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: 2,
-              height: 60,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(1),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isStreaming
-                      ? [AppTheme.success.withOpacity(0.5), AppTheme.success.withOpacity(0.05)]
-                      : [AppTheme.surfaceBorder, AppTheme.surfaceBorder.withOpacity(0.0)],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  DEVICE CARD
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildDeviceCard({
-    required int index,
-    required IconData icon,
-    required AudioSink? selectedSink,
-    required ValueChanged<AudioSink?> onSinkChanged,
-    required double volume,
-    required ValueChanged<double> onVolumeChanged,
-  }) {
-    final isStreaming = _service.isStreaming;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.all(24),
-      decoration: AppTheme.cardDecoration(isActive: isStreaming),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          // Card Header
+          // Header Row
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: index == 1 ? AppTheme.primaryGradient : const LinearGradient(
-                    colors: [Color(0xFFA855F7), Color(0xFF7C3AED)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: Colors.white, size: 20),
-              ),
+              const Icon(Icons.headphones_rounded, color: Colors.white, size: 42),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Device $index',
-                      style: AppTheme.headingSm,
+                    const Text(
+                      'Device 1',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      index == 1 ? 'Primary Output' : 'Secondary Output',
-                      style: AppTheme.bodySm,
+                      'Primary Output',
+                      style: TextStyle(
+                        color: Colors.grey.shade400,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
               ),
-              if (selectedSink != null)
+
+              // Device Type Badge
+              if (sink != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: selectedSink.isBluetooth
-                        ? AppTheme.accent.withOpacity(0.1)
-                        : AppTheme.surfaceLight,
+                    color: AppTheme.darkInset,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: selectedSink.isBluetooth
-                          ? AppTheme.accent.withOpacity(0.3)
-                          : AppTheme.surfaceBorder,
-                    ),
+                    border: Border.all(color: AppTheme.darkInsetBorder),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        selectedSink.isBluetooth ? Icons.bluetooth : Icons.speaker_rounded,
-                        size: 12,
-                        color: selectedSink.isBluetooth ? AppTheme.accent : AppTheme.textMuted,
+                        sink.isBluetooth ? Icons.bluetooth : Icons.speaker,
+                        size: 14,
+                        color: Colors.white,
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       Text(
-                        selectedSink.isBluetooth ? 'Bluetooth' : 'Wired',
-                        style: AppTheme.label.copyWith(
-                          color: selectedSink.isBluetooth ? AppTheme.accent : AppTheme.textMuted,
-                          fontSize: 10,
+                        sink.isBluetooth ? 'Bluetooth' : 'Wired',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -553,85 +357,356 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 24),
 
-          // Sink Selector
-          Text('AUDIO SINK', style: AppTheme.label),
-          const SizedBox(height: 8),
+          // AUDIO SINK Label
+          Text(
+            'AUDIO SINK',
+            style: TextStyle(
+              color: Colors.grey.shade400,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Dropdown Container (Dark Theme)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             decoration: BoxDecoration(
-              color: AppTheme.background.withOpacity(0.6),
+              color: AppTheme.darkInset,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.surfaceBorder),
+              border: Border.all(color: AppTheme.darkInsetBorder),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<AudioSink>(
-                value: selectedSink,
+                value: _selectedSink1,
                 isExpanded: true,
-                dropdownColor: AppTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                style: AppTheme.bodyMd.copyWith(color: AppTheme.textPrimary),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.textMuted, size: 20),
-                items: _sinks.map((sink) {
+                dropdownColor: AppTheme.cardDark,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70),
+                items: _sinks.map((item) {
                   return DropdownMenuItem<AudioSink>(
-                    value: sink,
+                    value: item,
                     child: Row(
                       children: [
                         Icon(
-                          sink.isBluetooth ? Icons.bluetooth : Icons.speaker_rounded,
-                          color: sink.isBluetooth ? AppTheme.accent : AppTheme.textMuted,
+                          item.isBluetooth ? Icons.bluetooth : Icons.speaker,
+                          color: Colors.white70,
                           size: 16,
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            sink.description,
+                            item.description,
                             overflow: TextOverflow.ellipsis,
-                            style: AppTheme.bodyMd.copyWith(color: AppTheme.textPrimary),
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ),
                       ],
                     ),
                   );
                 }).toList(),
-                onChanged: onSinkChanged,
+                onChanged: (s) async {
+                  setState(() => _selectedSink1 = s);
+                  if (s != null) {
+                    final v = await _service.getVolume(s);
+                    setState(() => _vol1 = v);
+                  }
+                },
               ),
             ),
           ),
 
           const Spacer(),
 
-          // Volume Control
-          const SizedBox(height: 16),
+          // Volume Row
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(
-                volume == 0 ? Icons.volume_off_rounded : (volume < 50 ? Icons.volume_down_rounded : Icons.volume_up_rounded),
-                color: AppTheme.accent,
-                size: 16,
+              Row(
+                children: [
+                  const Icon(Icons.volume_up_rounded, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'VOLUME',
+                    style: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Text('VOLUME', style: AppTheme.label),
-              const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppTheme.accent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppTheme.darkInset,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.darkInsetBorder),
                 ),
                 child: Text(
-                  '${volume.round()}%',
-                  style: AppTheme.label.copyWith(color: AppTheme.accent, fontSize: 13, fontWeight: FontWeight.w700),
+                  '${_vol1.round()}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Slider(
-            value: volume.clamp(0.0, 100.0),
-            min: 0,
-            max: 100,
-            divisions: 100,
-            onChanged: onVolumeChanged,
+          const SizedBox(height: 10),
+
+          // Custom White Slider for Device 1
+          SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 6,
+              activeTrackColor: Colors.white,
+              inactiveTrackColor: const Color(0xFF2E3342),
+              thumbColor: Colors.white,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+              overlayColor: Colors.white.withOpacity(0.12),
+            ),
+            child: Slider(
+              value: _vol1.clamp(0.0, 100.0),
+              min: 0,
+              max: 100,
+              divisions: 100,
+              onChanged: (v) {
+                setState(() => _vol1 = v);
+                if (_selectedSink1 != null) {
+                  _service.setVolume(_selectedSink1!, v);
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DEVICE 2 CARD (Light High-Contrast Theme)
+  // ═══════════════════════════════════════════════════════════════
+  Widget _buildDeviceCard2() {
+    final sink = _selectedSink2;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppTheme.cardLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.cardLightBorder, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Icon(Icons.headphones_rounded, color: Colors.black, size: 42),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Device 2',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Text(
+                      'Secondary Output',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Device Type Badge
+              if (sink != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        sink.isBluetooth ? Icons.bluetooth : Icons.speaker,
+                        size: 14,
+                        color: Colors.black,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        sink.isBluetooth ? 'Bluetooth' : 'Wired',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // AUDIO SINK Label
+          const Text(
+            'AUDIO SINK',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Dropdown Container (Light Theme)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<AudioSink>(
+                value: _selectedSink2,
+                isExpanded: true,
+                dropdownColor: Colors.white,
+                style: const TextStyle(color: Colors.black, fontSize: 14),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.black87),
+                items: _sinks.map((item) {
+                  return DropdownMenuItem<AudioSink>(
+                    value: item,
+                    child: Row(
+                      children: [
+                        Icon(
+                          item.isBluetooth ? Icons.bluetooth : Icons.speaker,
+                          color: Colors.black87,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            item.description,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.black),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (s) async {
+                  setState(() => _selectedSink2 = s);
+                  if (s != null) {
+                    final v = await _service.getVolume(s);
+                    setState(() => _vol2 = v);
+                  }
+                },
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // Volume Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.volume_up_rounded, color: Colors.black, size: 18),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'VOLUME',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '${_vol2.round()}%',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Custom Black Slider for Device 2
+          SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 6,
+              activeTrackColor: Colors.black,
+              inactiveTrackColor: const Color(0xFFCBD5E1),
+              thumbColor: Colors.black,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+              overlayColor: Colors.black.withOpacity(0.12),
+            ),
+            child: Slider(
+              value: _vol2.clamp(0.0, 100.0),
+              min: 0,
+              max: 100,
+              divisions: 100,
+              onChanged: (v) {
+                setState(() => _vol2 = v);
+                if (_selectedSink2 != null) {
+                  _service.setVolume(_selectedSink2!, v);
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -642,60 +717,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   //  MASTER CONTROL BUTTON
   // ═══════════════════════════════════════════════════════════════
   Widget _buildMasterButton(bool isStreaming) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: _isLoading ? null : _toggleStream,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOutCubic,
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            gradient: isStreaming ? AppTheme.dangerGradient : AppTheme.primaryGradient,
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _toggleStream,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          backgroundColor: isStreaming ? Colors.redAccent.shade700 : AppTheme.buttonDark,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: (isStreaming ? AppTheme.error : AppTheme.accent).withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-            ],
+            side: BorderSide(
+              color: isStreaming ? Colors.redAccent : AppTheme.buttonDarkBorder,
+            ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_isLoading)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              else
-                Icon(
-                  isStreaming ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 24,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isLoading)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
-              const SizedBox(width: 10),
-              Text(
-                _isLoading
-                    ? 'Connecting...'
-                    : isStreaming
-                        ? 'Stop Dual Stream'
-                        : 'Start Dual Stream',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: -0.3,
-                ),
+              )
+            else
+              Icon(
+                isStreaming ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                size: 22,
+                color: Colors.white,
               ),
-            ],
-          ),
+            const SizedBox(width: 8),
+            Text(
+              isStreaming ? 'Stop Dual Stream' : 'Start Dual Stream',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
         ),
       ),
     );
