@@ -100,8 +100,6 @@ class PipeWireService {
   Future<bool> startDualStream({
     required AudioSink target1,
     required AudioSink target2,
-    required int delay1Ms,
-    required int delay2Ms,
   }) async {
     await stopDualStream();
 
@@ -114,9 +112,6 @@ class PipeWireService {
         '-i', 'node.name=Dual_Master_Sink media.class=Audio/Sink node.description="Dual Bluetooth Audio Master"',
         '--playback', target1.name,
       ];
-      if (delay1Ms > 0) {
-        args1.addAll(['--delay', (delay1Ms / 1000.0).toStringAsFixed(3)]);
-      }
 
       final proc1 = await Process.start('pw-loopback', args1);
       _activeLoopbacks.add(proc1);
@@ -129,9 +124,6 @@ class PipeWireService {
         '--capture', 'Dual_Master_Sink',
         '--playback', target2.name,
       ];
-      if (delay2Ms > 0) {
-        args2.addAll(['--delay', (delay2Ms / 1000.0).toStringAsFixed(3)]);
-      }
 
       final proc2 = await Process.start('pw-loopback', args2);
       _activeLoopbacks.add(proc2);

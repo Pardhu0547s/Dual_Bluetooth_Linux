@@ -14,8 +14,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<AudioSink> _sinks = [];
   AudioSink? _selectedSink1;
   AudioSink? _selectedSink2;
-  double _delay1 = 0;
-  double _delay2 = 0;
   double _vol1 = 80;
   double _vol2 = 80;
   bool _isLoading = false;
@@ -76,8 +74,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       final success = await _service.startDualStream(
         target1: _selectedSink1!,
         target2: _selectedSink2!,
-        delay1Ms: _delay1.round(),
-        delay2Ms: _delay2.round(),
       );
 
       if (!success) {
@@ -87,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           );
         }
       } else {
-        // Set volumes for target sinks
         await _service.setVolume(_selectedSink1!, _vol1);
         await _service.setVolume(_selectedSink2!, _vol2);
       }
@@ -224,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ],
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 32),
 
                 // Device Cards Grid
                 Expanded(
@@ -248,8 +243,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               _service.setVolume(_selectedSink1!, v);
                             }
                           },
-                          delay: _delay1,
-                          onDelayChanged: (v) => setState(() => _delay1 = v),
                         ),
                       ),
                       const SizedBox(width: 24),
@@ -271,14 +264,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               _service.setVolume(_selectedSink2!, v);
                             }
                           },
-                          delay: _delay2,
-                          onDelayChanged: (v) => setState(() => _delay2 = v),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 28),
 
                 // Master Toggle Button
                 ElevatedButton(
@@ -321,11 +312,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     required ValueChanged<AudioSink?> onSinkChanged,
     required double volume,
     required ValueChanged<double> onVolumeChanged,
-    required double delay,
-    required ValueChanged<double> onDelayChanged,
   }) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         color: const Color(0xFF141822).withOpacity(0.8),
         borderRadius: BorderRadius.circular(24),
@@ -338,136 +327,108 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.headphones_rounded, color: Color(0xFF00F2FE), size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.headphones_rounded, color: Color(0xFF00F2FE), size: 22),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          const Text(
+            'TARGET AUDIO SINK',
+            style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8),
+          ),
+          const SizedBox(height: 10),
+
+          // Dropdown Container
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0E14),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<AudioSink>(
+                value: selectedSink,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF141822),
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                items: _sinks.map((sink) {
+                  return DropdownMenuItem<AudioSink>(
+                    value: sink,
+                    child: Row(
+                      children: [
+                        Icon(
+                          sink.isBluetooth ? Icons.bluetooth : Icons.speaker,
+                          color: sink.isBluetooth ? const Color(0xFF4FACFE) : Colors.white70,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            sink.description,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: onSinkChanged,
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // Individual Volume Slider
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    volume == 0 ? Icons.volume_off : (volume < 50 ? Icons.volume_down : Icons.volume_up),
+                    color: const Color(0xFF00F2FE),
+                    size: 18,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            const Text(
-              'TARGET AUDIO SINK',
-              style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8),
-            ),
-            const SizedBox(height: 8),
-
-            // Dropdown Container
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0B0E14),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'DEVICE VOLUME',
+                    style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8),
+                  ),
+                ],
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<AudioSink>(
-                  value: selectedSink,
-                  isExpanded: true,
-                  dropdownColor: const Color(0xFF141822),
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  items: _sinks.map((sink) {
-                    return DropdownMenuItem<AudioSink>(
-                      value: sink,
-                      child: Row(
-                        children: [
-                          Icon(
-                            sink.isBluetooth ? Icons.bluetooth : Icons.speaker,
-                            color: sink.isBluetooth ? const Color(0xFF4FACFE) : Colors.white70,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              sink.description,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: onSinkChanged,
-                ),
+              Text(
+                '${volume.round()}%',
+                style: const TextStyle(color: Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 15),
               ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Individual Volume Slider
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      volume == 0 ? Icons.volume_off : (volume < 50 ? Icons.volume_down : Icons.volume_up),
-                      color: const Color(0xFF4FACFE),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'DEVICE VOLUME',
-                      style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8),
-                    ),
-                  ],
-                ),
-                Text(
-                  '${volume.round()}%',
-                  style: const TextStyle(color: Color(0xFF4FACFE), fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ],
-            ),
-            Slider(
-              value: volume.clamp(0.0, 100.0),
-              min: 0,
-              max: 100,
-              divisions: 100,
-              activeColor: const Color(0xFF4FACFE),
-              inactiveColor: Colors.white.withOpacity(0.1),
-              onChanged: onVolumeChanged,
-            ),
-
-            const SizedBox(height: 12),
-
-            // Latency Slider
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'LATENCY DELAY',
-                  style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8),
-                ),
-                Text(
-                  '${delay.round()} ms',
-                  style: const TextStyle(color: Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ],
-            ),
-            Slider(
-              value: delay,
-              min: 0,
-              max: 500,
-              divisions: 100,
-              activeColor: const Color(0xFF00F2FE),
-              inactiveColor: Colors.white.withOpacity(0.1),
-              onChanged: onDelayChanged,
-            ),
-          ],
-        ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Slider(
+            value: volume.clamp(0.0, 100.0),
+            min: 0,
+            max: 100,
+            divisions: 100,
+            activeColor: const Color(0xFF00F2FE),
+            inactiveColor: Colors.white.withOpacity(0.1),
+            onChanged: onVolumeChanged,
+          ),
+        ],
       ),
     );
   }
