@@ -1,0 +1,12 @@
+{
+  "uuid": "dual-audio-hub@pardhu0547s.github.io",
+  "name": "Dual Audio Hub",
+  "description": "Quick top-bar toggle for Dual Bluetooth Audio streaming on Linux via PipeWire",
+  "shell-version": [
+    "45",
+    "46",
+    "47"
+  ],
+  "url": "https://github.com/Pardhu0547s/Dual_Bluetooth_Linux",
+  "version": 1
+}
