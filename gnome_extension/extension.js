@@ -13,6 +13,44 @@ import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
+import Clutter from 'gi://Clutter';
+
+// Volume slider menu item
+const VolumeSliderItem = GObject.registerClass(
+class VolumeSliderItem extends PopupMenu.PopupBaseMenuItem {
+    _init(label) {
+        super._init({ activate: false });
+
+        this._icon = new St.Icon({
+            icon_name: 'audio-volume-high-symbolic',
+            style_class: 'popup-menu-icon',
+        });
+        this.add_child(this._icon);
+
+        this._slider = new Slider.Slider(1.0);
+        this._slider.x_expand = true;
+        this.add_child(this._slider);
+
+        this._label = new St.Label({
+            text: '100%',
+            y_align: Clutter.ActorAlign.CENTER,
+            style: 'min-width: 42px; text-align: right;',
+        });
+        this.add_child(this._label);
+
+        this._slider.connect('notify::value', () => {
+            const pct = Math.round(this._slider.value * 100);
+            this._label.text = `${pct}%`;
+        });
+    }
+
+    get slider() { return this._slider; }
+    get value() { return this._slider.value; }
+    set value(v) {
+        this._slider.value = v;
+        this._label.text = `${Math.round(v * 100)}%`;
+    }
+});
 
 // Quick Settings Toggle that appears in the grid alongside Wi-Fi, Bluetooth, etc.
 const DualAudioToggle = GObject.registerClass(
@@ -26,48 +64,31 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
         });
 
         try {
-            this.menu.setHeader('audio-headphones-symbolic', 'Dual Audio Hub', 'PipeWire Dual Bluetooth Stream');
+            this.menu.setHeader('audio-headphones-symbolic', 'Dual Audio Hub', 'Dual Bluetooth Stream');
         } catch (_) {}
 
         // Device 1 (Primary) submenu
-        this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1: Select Primary');
+        this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1: Select');
         this.menu.addMenuItem(this.itemDevice1);
 
         // Volume slider for Device 1
-        this._vol1Item = new PopupMenu.PopupBaseMenuItem({ activate: false });
-        const vol1Icon = new St.Icon({ icon_name: 'audio-volume-high-symbolic', style_class: 'popup-menu-icon' });
-        this._vol1Item.add_child(vol1Icon);
-        this._slider1 = new Slider.Slider(1.0);
-        this._slider1.x_expand = true;
-        this._vol1Item.add_child(this._slider1);
-        this._vol1Label = new St.Label({ text: '100%', style: 'min-width: 40px; text-align: right;' });
-        this._vol1Item.add_child(this._vol1Label);
-        this.menu.addMenuItem(this._vol1Item);
+        this.volSlider1 = new VolumeSliderItem('Vol 1');
+        this.menu.addMenuItem(this.volSlider1);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // Device 2 (Secondary) submenu
-        this.itemDevice2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2: Select Secondary');
+        this.itemDevice2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2: Select');
         this.menu.addMenuItem(this.itemDevice2);
 
         // Volume slider for Device 2
-        this._vol2Item = new PopupMenu.PopupBaseMenuItem({ activate: false });
-        const vol2Icon = new St.Icon({ icon_name: 'audio-volume-high-symbolic', style_class: 'popup-menu-icon' });
-        this._vol2Item.add_child(vol2Icon);
-        this._slider2 = new Slider.Slider(1.0);
-        this._slider2.x_expand = true;
-        this._vol2Item.add_child(this._slider2);
-        this._vol2Label = new St.Label({ text: '100%', style: 'min-width: 40px; text-align: right;' });
-        this._vol2Item.add_child(this._vol2Label);
-        this.menu.addMenuItem(this._vol2Item);
+        this.volSlider2 = new VolumeSliderItem('Vol 2');
+        this.menu.addMenuItem(this.volSlider2);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Refresh button (cleaner icon + text)
-        const refreshItem = new PopupMenu.PopupMenuItem('Refresh Devices');
-        refreshItem.insert_child_at_index(
-            new St.Icon({ icon_name: 'view-refresh-symbolic', style_class: 'popup-menu-icon' }), 1
-        );
+        // Refresh button
+        const refreshItem = new PopupMenu.PopupMenuItem('↻  Refresh Devices');
         refreshItem.connect('activate', () => {
             if (this._extensionRef) {
                 this._extensionRef._refreshSinks();
@@ -83,16 +104,13 @@ class DualAudioIndicator extends QuickSettings.SystemIndicator {
     constructor(extensionObject) {
         super();
 
-        // Create the panel indicator icon (headphones in top bar)
         this._indicator = this._addIndicator();
         this._indicator.icon_name = 'audio-headphones-symbolic';
-        this._indicator.visible = false; // Only show when streaming
+        this._indicator.visible = false;
 
-        // Create the Quick Settings toggle button
         this._toggle = new DualAudioToggle();
         this._toggle._extensionObj = extensionObject;
 
-        // Push toggle into quickSettingsItems so it appears in the grid
         this.quickSettingsItems.push(this._toggle);
     }
 
@@ -111,11 +129,9 @@ export default class DualAudioExtension extends Extension {
         this._activeSubprocesses = [];
         this._monitorTimeoutId = 0;
 
-        // Create SystemIndicator and register it with Quick Settings
         this._systemIndicator = new DualAudioIndicator(this);
         this._systemIndicator._toggle._extensionRef = this;
 
-        // Wire up the toggle click
         this._systemIndicator._toggle.connect('clicked', () => {
             if (this._systemIndicator._toggle.checked) {
                 this._startDualStream();
@@ -126,25 +142,19 @@ export default class DualAudioExtension extends Extension {
 
         // Wire up volume sliders
         const toggle = this._systemIndicator._toggle;
-        toggle._slider1.connect('notify::value', () => {
-            const vol = toggle._slider1.value;
-            toggle._vol1Label.text = `${Math.round(vol * 100)}%`;
+        toggle.volSlider1.slider.connect('notify::value', () => {
             if (this._targetSink1) {
-                this._setVolume(this._targetSink1.id, vol);
+                this._setVolume(this._targetSink1.id, toggle.volSlider1.value);
             }
         });
-        toggle._slider2.connect('notify::value', () => {
-            const vol = toggle._slider2.value;
-            toggle._vol2Label.text = `${Math.round(vol * 100)}%`;
+        toggle.volSlider2.slider.connect('notify::value', () => {
             if (this._targetSink2) {
-                this._setVolume(this._targetSink2.id, vol);
+                this._setVolume(this._targetSink2.id, toggle.volSlider2.value);
             }
         });
 
-        // Register with GNOME Quick Settings panel
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._systemIndicator);
 
-        // Initial device scan
         this._refreshSinks();
     }
 
@@ -181,7 +191,6 @@ export default class DualAudioExtension extends Extension {
                 try {
                     const [, stdout] = obj.communicate_utf8_finish(res);
                     if (stdout) {
-                        // Output: "Volume: 0.75"
                         const match = stdout.match(/Volume:\s*([\d.]+)/);
                         if (match) callback(parseFloat(match[1]));
                     }
@@ -211,14 +220,15 @@ export default class DualAudioExtension extends Extension {
                             const mediaClass = props['media.class'] || '';
                             const nodeName = props['node.name'] || '';
 
-                            if (mediaClass === 'Audio/Sink' && !nodeName.includes('Dual_Master_Sink')) {
+                            // Only show Bluetooth audio sinks
+                            const isBt = nodeName.includes('bluez') || props['device.api'] === 'bluez5';
+                            if (mediaClass === 'Audio/Sink' && isBt && !nodeName.includes('Dual_Master_Sink')) {
                                 const desc = props['node.description'] || nodeName;
-                                const isBt = nodeName.includes('bluez') || props['device.api'] === 'bluez5';
                                 parsedSinks.push({
                                     id: item.id,
                                     name: nodeName,
                                     description: desc,
-                                    isBluetooth: isBt,
+                                    isBluetooth: true,
                                 });
                             }
                         }
@@ -244,14 +254,12 @@ export default class DualAudioExtension extends Extension {
 
         if (this._targetSink1) {
             this._getVolume(this._targetSink1.id, (vol) => {
-                toggle._slider1.value = Math.min(vol, 1.0);
-                toggle._vol1Label.text = `${Math.round(Math.min(vol, 1.0) * 100)}%`;
+                toggle.volSlider1.value = Math.min(vol, 1.0);
             });
         }
         if (this._targetSink2) {
             this._getVolume(this._targetSink2.id, (vol) => {
-                toggle._slider2.value = Math.min(vol, 1.0);
-                toggle._vol2Label.text = `${Math.round(Math.min(vol, 1.0) * 100)}%`;
+                toggle.volSlider2.value = Math.min(vol, 1.0);
             });
         }
     }
@@ -267,13 +275,12 @@ export default class DualAudioExtension extends Extension {
             m2.removeAll();
 
             if (this._sinks.length === 0) {
-                m1.addMenuItem(new PopupMenu.PopupMenuItem('No devices found', { reactive: false }));
-                m2.addMenuItem(new PopupMenu.PopupMenuItem('No devices found', { reactive: false }));
+                m1.addMenuItem(new PopupMenu.PopupMenuItem('No Bluetooth devices', { reactive: false }));
+                m2.addMenuItem(new PopupMenu.PopupMenuItem('No Bluetooth devices', { reactive: false }));
             } else {
                 this._sinks.forEach(sink => {
-                    const icon1 = sink.isBluetooth ? '🎧' : '🔈';
                     const check1 = (this._targetSink1 && this._targetSink1.name === sink.name) ? '✓ ' : '   ';
-                    const it1 = new PopupMenu.PopupMenuItem(`${check1}${icon1} ${sink.description}`);
+                    const it1 = new PopupMenu.PopupMenuItem(`${check1}🎧 ${sink.description}`);
                     it1.connect('activate', () => {
                         this._targetSink1 = sink;
                         this._updateSinkSubmenus();
@@ -282,7 +289,7 @@ export default class DualAudioExtension extends Extension {
                     m1.addMenuItem(it1);
 
                     const check2 = (this._targetSink2 && this._targetSink2.name === sink.name) ? '✓ ' : '   ';
-                    const it2 = new PopupMenu.PopupMenuItem(`${check2}${icon1} ${sink.description}`);
+                    const it2 = new PopupMenu.PopupMenuItem(`${check2}🎧 ${sink.description}`);
                     it2.connect('activate', () => {
                         this._targetSink2 = sink;
                         this._updateSinkSubmenus();
@@ -292,11 +299,9 @@ export default class DualAudioExtension extends Extension {
                 });
             }
 
-            // Update submenu labels
             if (this._targetSink1) toggle.itemDevice1.label.text = `🎧 Device 1: ${this._targetSink1.description}`;
             if (this._targetSink2) toggle.itemDevice2.label.text = `🎧 Device 2: ${this._targetSink2.description}`;
 
-            // Update subtitle
             toggle.subtitle = this._isStreaming ? 'Streaming' : 'Off';
         } catch (e) {
             console.error(`[Dual Audio Hub] Error updating submenus: ${e}`);
@@ -305,7 +310,7 @@ export default class DualAudioExtension extends Extension {
 
     _startDualStream() {
         if (!this._targetSink1 || !this._targetSink2) {
-            Main.notify('Dual Audio Hub', 'Need at least two connected audio output sinks.');
+            Main.notify('Dual Audio Hub', 'Connect at least two Bluetooth devices first.');
             if (this._systemIndicator && this._systemIndicator._toggle) {
                 this._systemIndicator._toggle.checked = false;
             }
@@ -354,7 +359,7 @@ export default class DualAudioExtension extends Extension {
             }
 
             this._startDisconnectMonitor();
-            Main.notify('Dual Audio Hub', 'Dual audio streaming active! 🎧🎧');
+            Main.notify('Dual Audio Hub', 'Dual Bluetooth streaming active! 🎧🎧');
         } catch (e) {
             console.error(`[Dual Audio Hub] Error starting stream: ${e}`);
             this._stopDualStream();
@@ -415,7 +420,7 @@ export default class DualAudioExtension extends Extension {
 
                     if (!t1Ok || !t2Ok) {
                         const gone = !t1Ok ? this._targetSink1.description : this._targetSink2.description;
-                        Main.notify('Dual Audio Hub', `Device disconnected: ${gone}. Stopped dual stream.`);
+                        Main.notify('Dual Audio Hub', `${gone} disconnected. Stopped dual stream.`);
                         this._stopDualStream();
                     }
                 } catch (_) {}
