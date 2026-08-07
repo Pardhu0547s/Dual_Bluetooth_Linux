@@ -352,25 +352,29 @@ export default class DualAudioExtension extends Extension {
         this._stopDualStream();
 
         try {
-            // Master Loopback: Creates Dual_Master_Sink and streams audio to Target Device 1
+            // Master Loopback: Creates Dual_Master_Sink with 50ms latency & 0.15s buffer delay alignment
             const proc1 = Gio.Subprocess.new(
                 [
                     'pw-loopback',
                     '--name', 'Dual_Master_Sink',
                     '-i', 'node.name=Dual_Master_Sink media.class=Audio/Sink node.description="Dual Master"',
+                    '-l', '50',
+                    '-d', '0.150',
                     '--playback', this._targetSink1.name,
                 ],
                 Gio.SubprocessFlags.NONE
             );
             this._activeSubprocesses.push(proc1);
 
-            // Slave Loopback: Captures audio from Dual_Master_Sink and streams to Target Device 2
+            // Slave Loopback: Captures audio from Dual_Master_Sink with matching 50ms latency & 0.15s buffer delay alignment
             GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
                 const proc2 = Gio.Subprocess.new(
                     [
                         'pw-loopback',
                         '--name', 'Dual_Slave_Stream',
                         '--capture', 'Dual_Master_Sink',
+                        '-l', '50',
+                        '-d', '0.150',
                         '--playback', this._targetSink2.name,
                     ],
                     Gio.SubprocessFlags.NONE
