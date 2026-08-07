@@ -1,20 +1,18 @@
 /*
  * Dual Audio Hub - GNOME Shell Extension
- * Compatible with GNOME 45, 46, 47, 48, 49, 50.3+
- * https://extensions.gnome.org/
+ * Compatible with GNOME 45, 46, 47, 48, 49, 50, 51
+ * Uses SystemIndicator + QuickMenuToggle for proper Quick Settings grid integration
  */
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as QuickSettings from 'resource:///org/gnome/shell/ui/quickSettings.js';
-import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
-// Custom Quick Settings Toggle Pill Button for GNOME Control Center
+// Quick Settings Toggle that appears in the grid alongside Wi-Fi, Bluetooth, etc.
 const DualAudioToggle = GObject.registerClass(
 class DualAudioToggle extends QuickSettings.QuickMenuToggle {
     _init() {
@@ -31,6 +29,31 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
     }
 });
 
+// SystemIndicator - the proper way to register into the Quick Settings grid
+const DualAudioIndicator = GObject.registerClass(
+class DualAudioIndicator extends QuickSettings.SystemIndicator {
+    constructor(extensionObject) {
+        super();
+
+        // Create the panel indicator icon (headphones in top bar)
+        this._indicator = this._addIndicator();
+        this._indicator.icon_name = 'audio-headphones-symbolic';
+        this._indicator.visible = false; // Only show when streaming
+
+        // Create the Quick Settings toggle button
+        this._toggle = new DualAudioToggle();
+        this._toggle._extensionObj = extensionObject;
+
+        // Push toggle into quickSettingsItems so it appears in the grid
+        this.quickSettingsItems.push(this._toggle);
+    }
+
+    destroy() {
+        this.quickSettingsItems.forEach(item => item.destroy());
+        super.destroy();
+    }
+});
+
 export default class DualAudioExtension extends Extension {
     enable() {
         this._isStreaming = false;
@@ -40,63 +63,22 @@ export default class DualAudioExtension extends Extension {
         this._activeSubprocesses = [];
         this._monitorTimeoutId = 0;
 
-        // 1. Add Toggle directly inside GNOME Quick Settings Panel Grid
-        try {
-            this._toggle = new DualAudioToggle();
-            this._toggle._extension = this;
+        // Create SystemIndicator and register it with Quick Settings
+        this._systemIndicator = new DualAudioIndicator(this);
 
-            this._toggle.connect('clicked', () => {
-                if (this._toggle.checked) {
-                    this._startDualStream();
-                } else {
-                    this._stopDualStream();
-                }
-            });
-
-            const qs = Main.panel.statusArea.quickSettings;
-            if (qs) {
-                if (typeof qs.addItem === 'function') {
-                    qs.addItem(this._toggle);
-                } else if (typeof qs._addToggle === 'function') {
-                    qs._addToggle(this._toggle);
-                } else if (qs._grid && typeof qs._grid.add_child === 'function') {
-                    qs._grid.add_child(this._toggle);
-                }
+        // Wire up the toggle click
+        this._systemIndicator._toggle.connect('clicked', () => {
+            if (this._systemIndicator._toggle.checked) {
+                this._startDualStream();
+            } else {
+                this._stopDualStream();
             }
-        } catch (e) {
-            console.warn(`[Dual Audio Hub] QuickSettings toggle note: ${e}`);
-        }
+        });
 
-        // 2. Add Top Bar Panel Indicator
-        try {
-            this._indicator = new PanelMenu.Button(0.0, 'Dual Audio Hub', false);
-            const icon = new St.Icon({
-                icon_name: 'audio-headphones-symbolic',
-                style_class: 'system-status-icon',
-            });
-            this._indicator.add_child(icon);
+        // Register with GNOME Quick Settings panel
+        Main.panel.statusArea.quickSettings.addExternalIndicator(this._systemIndicator);
 
-            const headerItem = new PopupMenu.PopupMenuItem('Dual Audio Hub', { reactive: false });
-            headerItem.label.add_style_class_name('popup-subtitle-menu-item');
-            this._indicator.menu.addMenuItem(headerItem);
-
-            this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-            this._panelToggleItem = new PopupMenu.PopupSwitchMenuItem('▶ Start Dual Stream', false);
-            this._panelToggleItem.connect('toggled', (item, state) => {
-                if (state) {
-                    this._startDualStream();
-                } else {
-                    this._stopDualStream();
-                }
-            });
-            this._indicator.menu.addMenuItem(this._panelToggleItem);
-
-            Main.panel.addToStatusArea(this.uuid, this._indicator);
-        } catch (e) {
-            console.warn(`[Dual Audio Hub] Panel indicator note: ${e}`);
-        }
-
+        // Initial device scan
         this._refreshSinks();
     }
 
@@ -108,14 +90,9 @@ export default class DualAudioExtension extends Extension {
             this._monitorTimeoutId = 0;
         }
 
-        if (this._toggle) {
-            try { this._toggle.destroy(); } catch (_) {}
-            this._toggle = null;
-        }
-
-        if (this._indicator) {
-            try { this._indicator.destroy(); } catch (_) {}
-            this._indicator = null;
+        if (this._systemIndicator) {
+            this._systemIndicator.destroy();
+            this._systemIndicator = null;
         }
     }
 
@@ -168,8 +145,9 @@ export default class DualAudioExtension extends Extension {
     _startDualStream() {
         if (!this._targetSink1 || !this._targetSink2) {
             Main.notify('Dual Audio Hub', 'Need at least two connected audio output sinks.');
-            if (this._toggle) this._toggle.checked = false;
-            if (this._panelToggleItem) this._panelToggleItem.setToggleState(false);
+            if (this._systemIndicator && this._systemIndicator._toggle) {
+                this._systemIndicator._toggle.checked = false;
+            }
             return;
         }
 
@@ -208,12 +186,10 @@ export default class DualAudioExtension extends Extension {
             });
 
             this._isStreaming = true;
-            if (this._toggle) {
-                this._toggle.checked = true;
-                this._toggle.subtitle = 'Streaming Dual Audio';
-            }
-            if (this._panelToggleItem) {
-                this._panelToggleItem.setToggleState(true);
+            if (this._systemIndicator) {
+                this._systemIndicator._toggle.checked = true;
+                this._systemIndicator._toggle.subtitle = 'Streaming';
+                this._systemIndicator._indicator.visible = true;
             }
 
             this._startDisconnectMonitor();
@@ -306,12 +282,10 @@ export default class DualAudioExtension extends Extension {
         } catch (_) {}
 
         this._isStreaming = false;
-        if (this._toggle) {
-            this._toggle.checked = false;
-            this._toggle.subtitle = 'Off';
-        }
-        if (this._panelToggleItem) {
-            this._panelToggleItem.setToggleState(false);
+        if (this._systemIndicator) {
+            this._systemIndicator._toggle.checked = false;
+            this._systemIndicator._toggle.subtitle = 'Off';
+            this._systemIndicator._indicator.visible = false;
         }
     }
 }
