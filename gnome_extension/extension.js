@@ -8,6 +8,8 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as QuickSettings from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as Slider from 'resource:///org/gnome/shell/ui/slider.js';
+import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -31,20 +33,47 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
         this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1: Select Primary');
         this.menu.addMenuItem(this.itemDevice1);
 
+        // Volume slider for Device 1
+        this._vol1Item = new PopupMenu.PopupBaseMenuItem({ activate: false });
+        const vol1Icon = new St.Icon({ icon_name: 'audio-volume-high-symbolic', style_class: 'popup-menu-icon' });
+        this._vol1Item.add_child(vol1Icon);
+        this._slider1 = new Slider.Slider(1.0);
+        this._slider1.x_expand = true;
+        this._vol1Item.add_child(this._slider1);
+        this._vol1Label = new St.Label({ text: '100%', style: 'min-width: 40px; text-align: right;' });
+        this._vol1Item.add_child(this._vol1Label);
+        this.menu.addMenuItem(this._vol1Item);
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
         // Device 2 (Secondary) submenu
         this.itemDevice2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2: Select Secondary');
         this.menu.addMenuItem(this.itemDevice2);
 
+        // Volume slider for Device 2
+        this._vol2Item = new PopupMenu.PopupBaseMenuItem({ activate: false });
+        const vol2Icon = new St.Icon({ icon_name: 'audio-volume-high-symbolic', style_class: 'popup-menu-icon' });
+        this._vol2Item.add_child(vol2Icon);
+        this._slider2 = new Slider.Slider(1.0);
+        this._slider2.x_expand = true;
+        this._vol2Item.add_child(this._slider2);
+        this._vol2Label = new St.Label({ text: '100%', style: 'min-width: 40px; text-align: right;' });
+        this._vol2Item.add_child(this._vol2Label);
+        this.menu.addMenuItem(this._vol2Item);
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Rescan button
-        const rescanItem = new PopupMenu.PopupMenuItem('🔄 Rescan Audio Devices');
-        rescanItem.connect('activate', () => {
+        // Refresh button (cleaner icon + text)
+        const refreshItem = new PopupMenu.PopupMenuItem('Refresh Devices');
+        refreshItem.insert_child_at_index(
+            new St.Icon({ icon_name: 'view-refresh-symbolic', style_class: 'popup-menu-icon' }), 1
+        );
+        refreshItem.connect('activate', () => {
             if (this._extensionRef) {
                 this._extensionRef._refreshSinks();
             }
         });
-        this.menu.addMenuItem(rescanItem);
+        this.menu.addMenuItem(refreshItem);
     }
 });
 
@@ -95,6 +124,23 @@ export default class DualAudioExtension extends Extension {
             }
         });
 
+        // Wire up volume sliders
+        const toggle = this._systemIndicator._toggle;
+        toggle._slider1.connect('notify::value', () => {
+            const vol = toggle._slider1.value;
+            toggle._vol1Label.text = `${Math.round(vol * 100)}%`;
+            if (this._targetSink1) {
+                this._setVolume(this._targetSink1.id, vol);
+            }
+        });
+        toggle._slider2.connect('notify::value', () => {
+            const vol = toggle._slider2.value;
+            toggle._vol2Label.text = `${Math.round(vol * 100)}%`;
+            if (this._targetSink2) {
+                this._setVolume(this._targetSink2.id, vol);
+            }
+        });
+
         // Register with GNOME Quick Settings panel
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._systemIndicator);
 
@@ -114,6 +160,34 @@ export default class DualAudioExtension extends Extension {
             this._systemIndicator.destroy();
             this._systemIndicator = null;
         }
+    }
+
+    _setVolume(sinkId, volume) {
+        try {
+            Gio.Subprocess.new(
+                ['wpctl', 'set-volume', String(sinkId), String(volume.toFixed(2))],
+                Gio.SubprocessFlags.NONE
+            );
+        } catch (_) {}
+    }
+
+    _getVolume(sinkId, callback) {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['wpctl', 'get-volume', String(sinkId)],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENT
+            );
+            proc.communicate_utf8_async(null, null, (obj, res) => {
+                try {
+                    const [, stdout] = obj.communicate_utf8_finish(res);
+                    if (stdout) {
+                        // Output: "Volume: 0.75"
+                        const match = stdout.match(/Volume:\s*([\d.]+)/);
+                        if (match) callback(parseFloat(match[1]));
+                    }
+                } catch (_) {}
+            });
+        } catch (_) {}
     }
 
     _refreshSinks() {
@@ -154,12 +228,31 @@ export default class DualAudioExtension extends Extension {
                     if (this._sinks.length > 0 && !this._targetSink1) this._targetSink1 = this._sinks[0];
                     if (this._sinks.length > 1 && !this._targetSink2) this._targetSink2 = this._sinks[1];
                     this._updateSinkSubmenus();
+                    this._syncVolumeSliders();
                 } catch (err) {
                     console.error(`[Dual Audio Hub] Error parsing pw-dump: ${err}`);
                 }
             });
         } catch (e) {
             console.error(`[Dual Audio Hub] Error refreshing sinks: ${e}`);
+        }
+    }
+
+    _syncVolumeSliders() {
+        const toggle = this._systemIndicator && this._systemIndicator._toggle;
+        if (!toggle) return;
+
+        if (this._targetSink1) {
+            this._getVolume(this._targetSink1.id, (vol) => {
+                toggle._slider1.value = Math.min(vol, 1.0);
+                toggle._vol1Label.text = `${Math.round(Math.min(vol, 1.0) * 100)}%`;
+            });
+        }
+        if (this._targetSink2) {
+            this._getVolume(this._targetSink2.id, (vol) => {
+                toggle._slider2.value = Math.min(vol, 1.0);
+                toggle._vol2Label.text = `${Math.round(Math.min(vol, 1.0) * 100)}%`;
+            });
         }
     }
 
@@ -184,6 +277,7 @@ export default class DualAudioExtension extends Extension {
                     it1.connect('activate', () => {
                         this._targetSink1 = sink;
                         this._updateSinkSubmenus();
+                        this._syncVolumeSliders();
                     });
                     m1.addMenuItem(it1);
 
@@ -192,6 +286,7 @@ export default class DualAudioExtension extends Extension {
                     it2.connect('activate', () => {
                         this._targetSink2 = sink;
                         this._updateSinkSubmenus();
+                        this._syncVolumeSliders();
                     });
                     m2.addMenuItem(it2);
                 });
