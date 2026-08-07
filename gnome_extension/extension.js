@@ -358,7 +358,7 @@ export default class DualAudioExtension extends Extension {
                 [
                     'pw-loopback',
                     '--name', 'Dual_Master_Sink',
-                    '-i', 'node.name=Dual_Master_Sink media.class=Audio/Sink node.description="Dual Master"',
+                    '-i', 'node.name=Dual_Master_Sink media.class=Audio/Sink node.description="Dual Master" node.latency=2048/48000',
                     '--playback', this._targetSink1.name,
                 ],
                 Gio.SubprocessFlags.NONE
@@ -371,6 +371,7 @@ export default class DualAudioExtension extends Extension {
                     [
                         'pw-loopback',
                         '--name', 'Dual_Slave_Stream',
+                        '-i', 'node.latency=2048/48000',
                         '--capture', 'Dual_Master_Sink',
                         '--playback', this._targetSink2.name,
                     ],
