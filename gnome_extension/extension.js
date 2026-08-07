@@ -47,6 +47,15 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
             }
         });
         this.menu.addMenuItem(rescanItem);
+
+        // Open Full Desktop Dashboard Button (Black & White UI)
+        const appItem = new PopupMenu.PopupMenuItem('⚙ Open Desktop Dashboard');
+        appItem.connect('activate', () => {
+            if (this._extension) {
+                this._extension._launchApp();
+            }
+        });
+        this.menu.addMenuItem(appItem);
     }
 });
 
@@ -122,6 +131,10 @@ export default class DualAudioExtension extends Extension {
             panelRescan.connect('activate', () => this._refreshSinks());
             this._indicator.menu.addMenuItem(panelRescan);
 
+            const panelApp = new PopupMenu.PopupMenuItem('⚙ Open Desktop Dashboard');
+            panelApp.connect('activate', () => this._launchApp());
+            this._indicator.menu.addMenuItem(panelApp);
+
             Main.panel.addToStatusArea(this.uuid, this._indicator);
         } catch (e) {
             console.warn(`[Dual Audio Hub] Panel indicator note: ${e}`);
@@ -146,6 +159,29 @@ export default class DualAudioExtension extends Extension {
         if (this._indicator) {
             try { this._indicator.destroy(); } catch (_) {}
             this._indicator = null;
+        }
+    }
+
+    _launchApp() {
+        try {
+            const candidatePaths = [
+                GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share', 'dual-audio-hub', 'dual_bt_app']),
+                '/home/pavan/WorkSpace/Dual_B/dual_bt_app/build/linux/x64/debug/bundle/dual_bt_app',
+                '/home/pavan/WorkSpace/Dual_B/dual_bt_app/build/linux/x64/release/bundle/dual_bt_app',
+            ];
+            let cmd = null;
+            for (const p of candidatePaths) {
+                if (GLib.file_test(p, GLib.FileTest.EXISTS)) {
+                    cmd = p;
+                    break;
+                }
+            }
+            if (!cmd) cmd = 'dual_bt_app';
+
+            const appInfo = Gio.AppInfo.create_from_commandline(cmd, 'Dual Audio Hub', Gio.AppInfoCreateFlags.NONE);
+            appInfo.launch([], null);
+        } catch (e) {
+            console.error(`[Dual Audio Hub] Error launching app: ${e}`);
         }
     }
 

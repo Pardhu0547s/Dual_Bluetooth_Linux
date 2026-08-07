@@ -1,35 +1,70 @@
 #!/usr/bin/env bash
 set -e
 
-echo "🧩 Installing Dual Audio Hub GNOME Shell Extension..."
+echo "🎧 Installing Dual Audio Hub (Desktop App + GNOME Extension)..."
 
+INSTALL_DIR="$HOME/.local/share/dual-audio-hub"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ICON_DIR="$HOME/.local/share/icons"
+DESKTOP_DIR="$HOME/.local/share/applications"
 EXT_UUID="dual-audio-hub@pardhu0547s.github.io"
-INSTALL_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gnome_extension"
+EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
 
-# 1. Create extension directory
+# Create directories
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$ICON_DIR"
+mkdir -p "$DESKTOP_DIR"
+mkdir -p "$EXT_DIR"
 
-# 2. Copy extension files
-echo "📦 Copying extension files to $INSTALL_DIR..."
-cp -r "$SRC_DIR/"* "$INSTALL_DIR/"
-
-# Copy icon.png if present in root
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/icon.png" ]; then
-    cp "$(dirname "${BASH_SOURCE[0]}")/icon.png" "$INSTALL_DIR/icon.png"
+# 1. Build release binary if not present
+if [ ! -f "$APP_DIR/dual_bt_app/build/linux/x64/release/bundle/dual_bt_app" ]; then
+    echo "🔨 Building Flutter Linux Desktop App..."
+    cd "$APP_DIR/dual_bt_app"
+    flutter build linux --release
+    cd "$APP_DIR"
 fi
 
-# 3. Allow version validation bypass (recommended for GNOME 45-51)
-gsettings set org.gnome.shell disable-extension-version-validation true 2>/dev/null || true
+# 2. Copy application bundle
+echo "📦 Installing Desktop Application files to $INSTALL_DIR..."
+cp -r "$APP_DIR/dual_bt_app/build/linux/x64/release/bundle/"* "$INSTALL_DIR/"
 
-# 4. Enable the extension
-if command -v gnome-extensions >/dev/null 2>&1; then
-    echo "⚡ Enabling GNOME Shell Extension..."
-    gnome-extensions enable "$EXT_UUID" || true
+# 3. Copy icon
+echo "🖼️ Installing application icon..."
+if [ -f "$APP_DIR/icon.png" ]; then
+    cp "$APP_DIR/icon.png" "$ICON_DIR/org.dualbt.DualAudioHub.png"
+fi
+
+# 4. Create Desktop Launcher Entry
+echo "🚀 Creating desktop launcher..."
+cat << EOF > "$DESKTOP_DIR/org.dualbt.DualAudioHub.desktop"
+[Desktop Entry]
+Name=Dual Audio Hub
+Comment=Stream synchronized audio to dual Bluetooth headphones on Linux
+Exec=$INSTALL_DIR/dual_bt_app
+Icon=$ICON_DIR/org.dualbt.DualAudioHub.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Mixer;
+Keywords=bluetooth;audio;dual;pipewire;
+EOF
+
+chmod +x "$DESKTOP_DIR/org.dualbt.DualAudioHub.desktop"
+
+# 5. Install GNOME Shell Extension
+if [ -d "$APP_DIR/gnome_extension" ]; then
+    echo "🧩 Installing GNOME Shell Extension..."
+    cp -r "$APP_DIR/gnome_extension/"* "$EXT_DIR/"
+    if [ -f "$APP_DIR/icon.png" ]; then
+        cp "$APP_DIR/icon.png" "$EXT_DIR/icon.png"
+    fi
+    gsettings set org.gnome.shell disable-extension-version-validation true 2>/dev/null || true
+    if command -v gnome-extensions >/dev/null 2>&1; then
+        gnome-extensions enable "$EXT_UUID" 2>/dev/null || true
+    fi
 fi
 
 echo "--------------------------------------------------------"
-echo "✅ Dual Audio Hub GNOME Extension installed successfully!"
-echo "🎧 Look for the Headphones Icon in your GNOME Top Status Bar."
-echo "💡 If it doesn't appear immediately, press Alt+F2, type 'r', and press Enter (X11) or log out and log back in (Wayland)."
+echo "✅ Dual Audio Hub installed successfully!"
+echo "📱 Open 'Dual Audio Hub' from your Linux Application Menu!"
+echo "🎧 Or toggle streaming directly from GNOME Quick Settings!"
 echo "--------------------------------------------------------"
