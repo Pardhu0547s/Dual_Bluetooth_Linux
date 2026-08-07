@@ -220,7 +220,7 @@ export default class DualAudioExtension extends Extension {
                             const mediaClass = props['media.class'] || '';
                             const nodeName = props['node.name'] || '';
 
-                            // Only show Bluetooth audio sinks
+                            // Filter Bluetooth audio output sinks
                             const isBt = nodeName.includes('bluez') || props['device.api'] === 'bluez5';
                             if (mediaClass === 'Audio/Sink' && isBt && !nodeName.includes('Dual_Master_Sink')) {
                                 const desc = props['node.description'] || nodeName;
@@ -320,6 +320,7 @@ export default class DualAudioExtension extends Extension {
         this._stopDualStream();
 
         try {
+            // Master Loopback: Creates Dual_Master_Sink and streams audio to Target Device 1
             const proc1 = Gio.Subprocess.new(
                 [
                     'pw-loopback',
@@ -331,12 +332,12 @@ export default class DualAudioExtension extends Extension {
             );
             this._activeSubprocesses.push(proc1);
 
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 600, () => {
+            // Slave Loopback: Captures audio from Dual_Master_Sink and streams to Target Device 2
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
                 const proc2 = Gio.Subprocess.new(
                     [
                         'pw-loopback',
                         '--name', 'Dual_Slave_Stream',
-                        '-i', 'stream.capture.sink=true',
                         '--capture', 'Dual_Master_Sink',
                         '--playback', this._targetSink2.name,
                     ],
@@ -344,7 +345,7 @@ export default class DualAudioExtension extends Extension {
                 );
                 this._activeSubprocesses.push(proc2);
 
-                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 600, () => {
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
                     this._setDefaultMasterSink();
                     return GLib.SOURCE_REMOVE;
                 });
@@ -360,7 +361,7 @@ export default class DualAudioExtension extends Extension {
             }
 
             this._startDisconnectMonitor();
-            Main.notify('Dual Audio Hub', 'Dual Bluetooth streaming active! 🎧🎧');
+            Main.notify('Dual Audio Hub', `Streaming to ${this._targetSink1.description} & ${this._targetSink2.description} 🎧🎧`);
         } catch (e) {
             console.error(`[Dual Audio Hub] Error starting stream: ${e}`);
             this._stopDualStream();
@@ -382,6 +383,7 @@ export default class DualAudioExtension extends Extension {
                         if (item && item.type === 'PipeWire:Interface:Node') {
                             const props = (item.info && item.info.props) || {};
                             if (props['node.name'] === 'Dual_Master_Sink') {
+                                // Set system default sink to Dual_Master_Sink
                                 Gio.Subprocess.new(['wpctl', 'set-default', String(item.id)], Gio.SubprocessFlags.NONE);
                                 break;
                             }
