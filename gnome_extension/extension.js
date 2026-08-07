@@ -331,7 +331,7 @@ export default class DualAudioExtension extends Extension {
                         }
                     }
 
-                    // Enforce monitor port link between Master Sink & Slave Stream
+                    // Enforce monitor port links between Master Sink & Slave Stream
                     Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_FL'], Gio.SubprocessFlags.NONE);
                     Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FR', 'input.Dual_Slave_Stream:input_FR'], Gio.SubprocessFlags.NONE);
                     Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_MONO'], Gio.SubprocessFlags.NONE);
