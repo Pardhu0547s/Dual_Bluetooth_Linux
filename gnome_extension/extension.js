@@ -25,28 +25,9 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
             toggleMode: true,
         });
 
-        // Header in expanded Quick Settings menu
         try {
             this.menu.setHeader('audio-headphones-symbolic', 'Dual Audio Hub', 'PipeWire Dual Bluetooth Stream');
         } catch (_) {}
-
-        // Submenus for Device 1 & Device 2
-        this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1 (Primary)');
-        this.itemDevice2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2 (Secondary)');
-
-        this.menu.addMenuItem(this.itemDevice1);
-        this.menu.addMenuItem(this.itemDevice2);
-
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-        // Rescan button
-        const rescanItem = new PopupMenu.PopupMenuItem('🔄 Rescan Audio Devices');
-        rescanItem.connect('activate', () => {
-            if (this._extension) {
-                this._extension._refreshSinks();
-            }
-        });
-        this.menu.addMenuItem(rescanItem);
 
         // Open Full Desktop Dashboard Button (Black & White UI)
         const appItem = new PopupMenu.PopupMenuItem('⚙ Open Desktop Dashboard');
@@ -68,7 +49,7 @@ export default class DualAudioExtension extends Extension {
         this._activeSubprocesses = [];
         this._monitorTimeoutId = 0;
 
-        // 1. Try GNOME Quick Settings Integration (Defensive loading)
+        // 1. GNOME Quick Settings Integration
         try {
             this._toggle = new DualAudioToggle();
             this._toggle._extension = this;
@@ -93,7 +74,7 @@ export default class DualAudioExtension extends Extension {
             console.warn(`[Dual Audio Hub] QuickSettings toggle note: ${e}`);
         }
 
-        // 2. Top Bar Panel Indicator (Guaranteed fallback across GNOME Shell versions)
+        // 2. Top Bar Panel Indicator (Ultra Minimal)
         try {
             this._indicator = new PanelMenu.Button(0.0, 'Dual Audio Hub', false);
             const icon = new St.Icon({
@@ -119,17 +100,6 @@ export default class DualAudioExtension extends Extension {
             this._indicator.menu.addMenuItem(this._panelToggleItem);
 
             this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-            this._panelSink1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1 (Primary)');
-            this._panelSink2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2 (Secondary)');
-            this._indicator.menu.addMenuItem(this._panelSink1);
-            this._indicator.menu.addMenuItem(this._panelSink2);
-
-            this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-            const panelRescan = new PopupMenu.PopupMenuItem('🔄 Rescan Devices');
-            panelRescan.connect('activate', () => this._refreshSinks());
-            this._indicator.menu.addMenuItem(panelRescan);
 
             const panelApp = new PopupMenu.PopupMenuItem('⚙ Open Desktop Dashboard');
             panelApp.connect('activate', () => this._launchApp());
@@ -220,7 +190,8 @@ export default class DualAudioExtension extends Extension {
                     }
 
                     this._sinks = parsedSinks;
-                    this._updateSinkSubmenus();
+                    if (this._sinks.length > 0 && !this._targetSink1) this._targetSink1 = this._sinks[0];
+                    if (this._sinks.length > 1 && !this._targetSink2) this._targetSink2 = this._sinks[1];
                 } catch (err) {
                     console.error(`[Dual Audio Hub] Error parsing pw-dump: ${err}`);
                 }
@@ -230,92 +201,10 @@ export default class DualAudioExtension extends Extension {
         }
     }
 
-    _updateSinkSubmenus() {
-        // Update QuickSettings menus
-        if (this._toggle && this._toggle.itemDevice1 && this._toggle.itemDevice2) {
-            try {
-                const m1 = this._toggle.itemDevice1.menu;
-                const m2 = this._toggle.itemDevice2.menu;
-                m1.removeAll();
-                m2.removeAll();
-
-                if (this._sinks.length === 0) {
-                    m1.addMenuItem(new PopupMenu.PopupMenuItem('No Audio Devices Found', { reactive: false }));
-                    m2.addMenuItem(new PopupMenu.PopupMenuItem('No Audio Devices Found', { reactive: false }));
-                } else {
-                    if (!this._targetSink1 && this._sinks.length > 0) this._targetSink1 = this._sinks[0];
-                    if (!this._targetSink2 && this._sinks.length > 1) this._targetSink2 = this._sinks[1];
-
-                    this._sinks.forEach(sink => {
-                        const p1 = (this._targetSink1 && this._targetSink1.name === sink.name) ? '✓ ' : '   ';
-                        const it1 = new PopupMenu.PopupMenuItem(`${p1}${sink.isBluetooth ? '🎧' : '🔈'} ${sink.description}`);
-                        it1.connect('activate', () => {
-                            this._targetSink1 = sink;
-                            this._updateSinkSubmenus();
-                        });
-                        m1.addMenuItem(it1);
-
-                        const p2 = (this._targetSink2 && this._targetSink2.name === sink.name) ? '✓ ' : '   ';
-                        const it2 = new PopupMenu.PopupMenuItem(`${p2}${sink.isBluetooth ? '🎧' : '🔈'} ${sink.description}`);
-                        it2.connect('activate', () => {
-                            this._targetSink2 = sink;
-                            this._updateSinkSubmenus();
-                        });
-                        m2.addMenuItem(it2);
-                    });
-                }
-
-                if (this._targetSink1) this._toggle.itemDevice1.label.text = `🎧 Device 1: ${this._targetSink1.description}`;
-                if (this._targetSink2) this._toggle.itemDevice2.label.text = `🎧 Device 2: ${this._targetSink2.description}`;
-
-                this._toggle.subtitle = (this._isStreaming && this._targetSink1 && this._targetSink2)
-                    ? 'Streaming Dual Audio'
-                    : 'Off';
-            } catch (_) {}
-        }
-
-        // Update Panel Indicator menus
-        if (this._panelSink1 && this._panelSink2) {
-            try {
-                const pm1 = this._panelSink1.menu;
-                const pm2 = this._panelSink2.menu;
-                pm1.removeAll();
-                pm2.removeAll();
-
-                if (this._sinks.length === 0) {
-                    pm1.addMenuItem(new PopupMenu.PopupMenuItem('No Audio Devices Found', { reactive: false }));
-                    pm2.addMenuItem(new PopupMenu.PopupMenuItem('No Audio Devices Found', { reactive: false }));
-                } else {
-                    this._sinks.forEach(sink => {
-                        const p1 = (this._targetSink1 && this._targetSink1.name === sink.name) ? '✓ ' : '   ';
-                        const it1 = new PopupMenu.PopupMenuItem(`${p1}${sink.isBluetooth ? '🎧' : '🔈'} ${sink.description}`);
-                        it1.connect('activate', () => {
-                            this._targetSink1 = sink;
-                            this._updateSinkSubmenus();
-                        });
-                        pm1.addMenuItem(it1);
-
-                        const p2 = (this._targetSink2 && this._targetSink2.name === sink.name) ? '✓ ' : '   ';
-                        const it2 = new PopupMenu.PopupMenuItem(`${p2}${sink.isBluetooth ? '🎧' : '🔈'} ${sink.description}`);
-                        it2.connect('activate', () => {
-                            this._targetSink2 = sink;
-                            this._updateSinkSubmenus();
-                        });
-                        pm2.addMenuItem(it2);
-                    });
-                }
-
-                if (this._targetSink1) this._panelSink1.label.text = `🎧 Device 1: ${this._targetSink1.description}`;
-                if (this._targetSink2) this._panelSink2.label.text = `🎧 Device 2: ${this._targetSink2.description}`;
-            } catch (_) {}
-        }
-    }
-
     _startDualStream() {
         if (!this._targetSink1 || !this._targetSink2) {
-            Main.notify('Dual Audio Hub', 'Please select two audio devices first.');
-            if (this._toggle) this._toggle.checked = false;
-            if (this._panelToggleItem) this._panelToggleItem.setToggleState(false);
+            // Open Desktop App so user selects sinks in the Black & White UI!
+            this._launchApp();
             return;
         }
 
