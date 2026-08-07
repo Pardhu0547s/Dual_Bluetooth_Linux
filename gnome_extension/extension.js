@@ -370,6 +370,7 @@ export default class DualAudioExtension extends Extension {
                     [
                         'pw-loopback',
                         '--name', 'Dual_Slave_Stream',
+                        '-i', 'stream.capture.sink=true',
                         '--capture', 'Dual_Master_Sink',
                         '--playback', this._targetSink2.name,
                     ],
