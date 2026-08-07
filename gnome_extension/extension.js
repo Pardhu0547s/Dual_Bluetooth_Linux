@@ -308,6 +308,38 @@ export default class DualAudioExtension extends Extension {
         }
     }
 
+    _fixSlaveStreamLinks() {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['pw-link', '-l'],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENT
+            );
+            proc.communicate_utf8_async(null, null, (obj, res) => {
+                try {
+                    const [, stdout] = obj.communicate_utf8_finish(res);
+                    if (stdout) {
+                        const lines = stdout.split('\n');
+                        for (const line of lines) {
+                            if (line.includes('bluez_input') && line.includes('Dual_Slave_Stream')) {
+                                const parts = line.split('->');
+                                if (parts.length === 2) {
+                                    const src = parts[0].trim();
+                                    const dst = parts[1].trim();
+                                    Gio.Subprocess.new(['pw-link', '-d', src, dst], Gio.SubprocessFlags.NONE);
+                                }
+                            }
+                        }
+                    }
+
+                    // Enforce monitor port link between Master Sink & Slave Stream
+                    Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_FL'], Gio.SubprocessFlags.NONE);
+                    Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FR', 'input.Dual_Slave_Stream:input_FR'], Gio.SubprocessFlags.NONE);
+                    Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_MONO'], Gio.SubprocessFlags.NONE);
+                } catch (_) {}
+            });
+        } catch (_) {}
+    }
+
     _startDualStream() {
         if (!this._targetSink1 || !this._targetSink2) {
             Main.notify('Dual Audio Hub', 'Connect at least two Bluetooth devices first.');
@@ -346,6 +378,7 @@ export default class DualAudioExtension extends Extension {
                 this._activeSubprocesses.push(proc2);
 
                 GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+                    this._fixSlaveStreamLinks();
                     this._setDefaultMasterSink();
                     return GLib.SOURCE_REMOVE;
                 });
