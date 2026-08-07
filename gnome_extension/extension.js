@@ -1,5 +1,5 @@
 /*
- * Dual Audio Hub - GNOME Shell Extension
+ * Dual Audio Hub - GNOME Quick Settings Extension
  * Compatible with GNOME 45, 46, 47, 48, 49, 50.3+
  * https://extensions.gnome.org/
  */
@@ -14,7 +14,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
-// Custom Quick Settings Toggle for GNOME 45+ / GNOME 50+
+// Custom Quick Settings Toggle Pill Button for GNOME Control Center
 const DualAudioToggle = GObject.registerClass(
 class DualAudioToggle extends QuickSettings.QuickMenuToggle {
     _init() {
@@ -49,7 +49,7 @@ export default class DualAudioExtension extends Extension {
         this._activeSubprocesses = [];
         this._monitorTimeoutId = 0;
 
-        // 1. GNOME Quick Settings Integration
+        // 1. Add Toggle directly inside GNOME Quick Settings Panel Grid!
         try {
             this._toggle = new DualAudioToggle();
             this._toggle._extension = this;
@@ -68,13 +68,15 @@ export default class DualAudioExtension extends Extension {
                     qs.addItem(this._toggle);
                 } else if (typeof qs._addToggle === 'function') {
                     qs._addToggle(this._toggle);
+                } else if (qs._grid && typeof qs._grid.add_child === 'function') {
+                    qs._grid.add_child(this._toggle);
                 }
             }
         } catch (e) {
             console.warn(`[Dual Audio Hub] QuickSettings toggle note: ${e}`);
         }
 
-        // 2. Top Bar Panel Indicator (Ultra Minimal)
+        // 2. Also add Top Bar Indicator as secondary access
         try {
             this._indicator = new PanelMenu.Button(0.0, 'Dual Audio Hub', false);
             const icon = new St.Icon({
@@ -203,7 +205,6 @@ export default class DualAudioExtension extends Extension {
 
     _startDualStream() {
         if (!this._targetSink1 || !this._targetSink2) {
-            // Open Desktop App so user selects sinks in the Black & White UI!
             this._launchApp();
             return;
         }
