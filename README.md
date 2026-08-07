@@ -16,17 +16,25 @@
 
 ---
 
-## 📋 Prerequisites
+## 📋 Dependencies
 
 Your Linux system must be running **GNOME Shell 45+** (Standard default on Fedora 39/40/41/42+, Ubuntu 23.10/24.04/24.10+, Debian 12+, Arch Linux) with **PipeWire**.
 
-Required tools:
-- `pipewire` & `wireplumber`
-- `bluez` / `bluetoothctl`
+The extension relies on PipeWire utilities (`pw-loopback`, `pw-link`, `pw-dump`, `wpctl`) to route and sync the audio perfectly. Make sure you have the required packages installed for your distribution:
 
-Check if PipeWire is running:
+**Ubuntu / Debian:**
 ```bash
-wpctl status
+sudo apt install pipewire wireplumber bluez pipewire-bin
+```
+
+**Fedora:**
+```bash
+sudo dnf install pipewire wireplumber bluez pipewire-utils
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S pipewire wireplumber bluez
 ```
 
 ---
@@ -46,19 +54,8 @@ bash install.sh
 ## 📖 How to Use
 
 1. **Connect Bluetooth Devices**: Pair and connect both Bluetooth headphones/speakers in your GNOME Bluetooth settings.
-2. **Toggle Dual Audio**: Click the **Dual Audio** toggle inside your GNOME Quick Settings menu or top status bar.
+2. **Open Quick Settings**: Open the GNOME Quick Settings menu (top right corner of your screen).
+3. **Select Devices**: Click the arrow next to the **Dual Audio** toggle to reveal the sub-menu. You can select your two Bluetooth devices here and independently adjust their volumes.
+4. **Stream**: Turn on the Dual Audio toggle to start streaming perfectly synchronized audio to both devices!
 
----
-
-## 📁 Project Structure
-
-```
-Dual_Bluetooth_Linux/
-├── gnome_extension/
-│   ├── extension.js          # Native QuickSettings ESM GNOME Extension module
-│   ├── metadata.json         # Extension metadata & shell version support (45-51)
-│   ├── stylesheet.css        # Extension menu styles
-│   └── icon.png              # Custom 3D split headphone icon asset
-├── install.sh                # Automated installer script
-└── README.md
-```
+*(Note: On Wayland, you may need to log out and log back into your user session after running the installer for the GNOME shell to load the extension properly).*
