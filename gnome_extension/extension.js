@@ -319,13 +319,14 @@ export default class DualAudioExtension extends Extension {
                     const [, stdout] = obj.communicate_utf8_finish(res);
                     if (stdout) {
                         const lines = stdout.split('\n');
+                        let currentSrc = null;
                         for (const line of lines) {
-                            if (line.includes('bluez_input') && line.includes('Dual_Slave_Stream')) {
-                                const parts = line.split('->');
-                                if (parts.length === 2) {
-                                    const src = parts[0].trim();
-                                    const dst = parts[1].trim();
-                                    Gio.Subprocess.new(['pw-link', '-d', src, dst], Gio.SubprocessFlags.NONE);
+                            if (!line.startsWith(' ') && !line.startsWith('\t') && line.length > 0) {
+                                currentSrc = line.trim();
+                            } else if (line.includes('|->') && currentSrc) {
+                                const dst = line.split('|->')[1].trim();
+                                if (currentSrc.includes('bluez_input') && dst.includes('Dual_Slave_Stream')) {
+                                    Gio.Subprocess.new(['pw-link', '-d', currentSrc, dst], Gio.SubprocessFlags.NONE);
                                 }
                             }
                         }
@@ -370,7 +371,6 @@ export default class DualAudioExtension extends Extension {
                     [
                         'pw-loopback',
                         '--name', 'Dual_Slave_Stream',
-                        '-i', 'stream.capture.sink=true',
                         '--capture', 'Dual_Master_Sink',
                         '--playback', this._targetSink2.name,
                     ],
