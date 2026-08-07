@@ -26,6 +26,25 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
         try {
             this.menu.setHeader('audio-headphones-symbolic', 'Dual Audio Hub', 'PipeWire Dual Bluetooth Stream');
         } catch (_) {}
+
+        // Device 1 (Primary) submenu
+        this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1: Select Primary');
+        this.menu.addMenuItem(this.itemDevice1);
+
+        // Device 2 (Secondary) submenu
+        this.itemDevice2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2: Select Secondary');
+        this.menu.addMenuItem(this.itemDevice2);
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        // Rescan button
+        const rescanItem = new PopupMenu.PopupMenuItem('🔄 Rescan Audio Devices');
+        rescanItem.connect('activate', () => {
+            if (this._extensionRef) {
+                this._extensionRef._refreshSinks();
+            }
+        });
+        this.menu.addMenuItem(rescanItem);
     }
 });
 
@@ -65,6 +84,7 @@ export default class DualAudioExtension extends Extension {
 
         // Create SystemIndicator and register it with Quick Settings
         this._systemIndicator = new DualAudioIndicator(this);
+        this._systemIndicator._toggle._extensionRef = this;
 
         // Wire up the toggle click
         this._systemIndicator._toggle.connect('clicked', () => {
@@ -133,12 +153,58 @@ export default class DualAudioExtension extends Extension {
                     this._sinks = parsedSinks;
                     if (this._sinks.length > 0 && !this._targetSink1) this._targetSink1 = this._sinks[0];
                     if (this._sinks.length > 1 && !this._targetSink2) this._targetSink2 = this._sinks[1];
+                    this._updateSinkSubmenus();
                 } catch (err) {
                     console.error(`[Dual Audio Hub] Error parsing pw-dump: ${err}`);
                 }
             });
         } catch (e) {
             console.error(`[Dual Audio Hub] Error refreshing sinks: ${e}`);
+        }
+    }
+
+    _updateSinkSubmenus() {
+        const toggle = this._systemIndicator && this._systemIndicator._toggle;
+        if (!toggle || !toggle.itemDevice1 || !toggle.itemDevice2) return;
+
+        try {
+            const m1 = toggle.itemDevice1.menu;
+            const m2 = toggle.itemDevice2.menu;
+            m1.removeAll();
+            m2.removeAll();
+
+            if (this._sinks.length === 0) {
+                m1.addMenuItem(new PopupMenu.PopupMenuItem('No devices found', { reactive: false }));
+                m2.addMenuItem(new PopupMenu.PopupMenuItem('No devices found', { reactive: false }));
+            } else {
+                this._sinks.forEach(sink => {
+                    const icon1 = sink.isBluetooth ? '🎧' : '🔈';
+                    const check1 = (this._targetSink1 && this._targetSink1.name === sink.name) ? '✓ ' : '   ';
+                    const it1 = new PopupMenu.PopupMenuItem(`${check1}${icon1} ${sink.description}`);
+                    it1.connect('activate', () => {
+                        this._targetSink1 = sink;
+                        this._updateSinkSubmenus();
+                    });
+                    m1.addMenuItem(it1);
+
+                    const check2 = (this._targetSink2 && this._targetSink2.name === sink.name) ? '✓ ' : '   ';
+                    const it2 = new PopupMenu.PopupMenuItem(`${check2}${icon1} ${sink.description}`);
+                    it2.connect('activate', () => {
+                        this._targetSink2 = sink;
+                        this._updateSinkSubmenus();
+                    });
+                    m2.addMenuItem(it2);
+                });
+            }
+
+            // Update submenu labels
+            if (this._targetSink1) toggle.itemDevice1.label.text = `🎧 Device 1: ${this._targetSink1.description}`;
+            if (this._targetSink2) toggle.itemDevice2.label.text = `🎧 Device 2: ${this._targetSink2.description}`;
+
+            // Update subtitle
+            toggle.subtitle = this._isStreaming ? 'Streaming' : 'Off';
+        } catch (e) {
+            console.error(`[Dual Audio Hub] Error updating submenus: ${e}`);
         }
     }
 
