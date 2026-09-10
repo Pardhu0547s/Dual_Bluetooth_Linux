@@ -1,7 +1,10 @@
 /*
  * Dual Audio Hub - GNOME Shell Extension
- * Compatible with GNOME 45, 46, 47, 48, 49, 50, 51
+ * Compatible with GNOME 45, 46, 47, 48, 49, 50
  * Uses SystemIndicator + QuickMenuToggle for proper Quick Settings grid integration
+ *
+ * Handles: No devices, single device, mid-stream disconnects, rapid toggling,
+ * same device selected twice, PipeWire failures, volume edge cases, and more.
  */
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -67,6 +70,12 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
             this.menu.setHeader('audio-headphones-symbolic', 'Dual Audio Hub', 'Dual Bluetooth Stream');
         } catch (_) {}
 
+        // Status bar (shows live state info inside the menu)
+        this._statusItem = new PopupMenu.PopupMenuItem('', { reactive: false });
+        this._statusItem.label.style = 'font-style: italic; color: #888;';
+        this.menu.addMenuItem(this._statusItem);
+        this._statusItem.visible = false;
+
         // Device 1 (Primary) submenu
         this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1: Select');
         this.menu.addMenuItem(this.itemDevice1);
@@ -95,6 +104,15 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
             }
         });
         this.menu.addMenuItem(refreshItem);
+    }
+
+    setStatus(text) {
+        if (!text) {
+            this._statusItem.visible = false;
+        } else {
+            this._statusItem.label.text = text;
+            this._statusItem.visible = true;
+        }
     }
 });
 
@@ -128,6 +146,8 @@ export default class DualAudioExtension extends Extension {
         this._targetSink2 = null;
         this._activeSubprocesses = [];
         this._monitorTimeoutId = 0;
+        this._startingStream = false;   // Guard against rapid toggle spam
+        this._pendingTimeouts = [];     // Track all GLib timeouts for cleanup
 
         this._systemIndicator = new DualAudioIndicator(this);
         this._systemIndicator._toggle._extensionRef = this;
@@ -140,17 +160,30 @@ export default class DualAudioExtension extends Extension {
             }
         });
 
-        // Wire up volume sliders
+        // Wire up volume sliders with debounce to avoid spamming wpctl
         const toggle = this._systemIndicator._toggle;
+        this._volDebounce1 = 0;
+        this._volDebounce2 = 0;
+
         toggle.volSlider1.slider.connect('notify::value', () => {
-            if (this._targetSink1) {
-                this._setVolume(this._targetSink1.id, toggle.volSlider1.value);
-            }
+            if (this._volDebounce1) GLib.Source.remove(this._volDebounce1);
+            this._volDebounce1 = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+                this._volDebounce1 = 0;
+                if (this._targetSink1) {
+                    this._setVolume(this._targetSink1.id, toggle.volSlider1.value);
+                }
+                return GLib.SOURCE_REMOVE;
+            });
         });
         toggle.volSlider2.slider.connect('notify::value', () => {
-            if (this._targetSink2) {
-                this._setVolume(this._targetSink2.id, toggle.volSlider2.value);
-            }
+            if (this._volDebounce2) GLib.Source.remove(this._volDebounce2);
+            this._volDebounce2 = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+                this._volDebounce2 = 0;
+                if (this._targetSink2) {
+                    this._setVolume(this._targetSink2.id, toggle.volSlider2.value);
+                }
+                return GLib.SOURCE_REMOVE;
+            });
         });
 
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._systemIndicator);
@@ -160,6 +193,16 @@ export default class DualAudioExtension extends Extension {
 
     disable() {
         this._stopDualStream();
+
+        // Clean up volume debounce timers
+        if (this._volDebounce1) { GLib.Source.remove(this._volDebounce1); this._volDebounce1 = 0; }
+        if (this._volDebounce2) { GLib.Source.remove(this._volDebounce2); this._volDebounce2 = 0; }
+
+        // Clean up any pending timeouts
+        for (const tid of this._pendingTimeouts) {
+            try { GLib.Source.remove(tid); } catch (_) {}
+        }
+        this._pendingTimeouts = [];
 
         if (this._monitorTimeoutId) {
             GLib.Source.remove(this._monitorTimeoutId);
@@ -209,7 +252,10 @@ export default class DualAudioExtension extends Extension {
             proc.communicate_utf8_async(null, null, (obj, res) => {
                 try {
                     const [, stdout] = obj.communicate_utf8_finish(res);
-                    if (!stdout) return;
+                    if (!stdout) {
+                        this._setStatusMessage('PipeWire not responding');
+                        return;
+                    }
 
                     const data = JSON.parse(stdout);
                     const parsedSinks = [];
@@ -235,17 +281,43 @@ export default class DualAudioExtension extends Extension {
                     }
 
                     this._sinks = parsedSinks;
-                    if (this._sinks.length > 0 && !this._targetSink1) this._targetSink1 = this._sinks[0];
-                    if (this._sinks.length > 1 && !this._targetSink2) this._targetSink2 = this._sinks[1];
+
+                    // Auto-select devices if not yet selected (or if previously selected device is gone)
+                    if (this._targetSink1 && !this._sinks.find(s => s.name === this._targetSink1.name)) {
+                        this._targetSink1 = null;
+                    }
+                    if (this._targetSink2 && !this._sinks.find(s => s.name === this._targetSink2.name)) {
+                        this._targetSink2 = null;
+                    }
+
+                    if (!this._targetSink1 && this._sinks.length > 0) this._targetSink1 = this._sinks[0];
+                    if (!this._targetSink2 && this._sinks.length > 1) this._targetSink2 = this._sinks[1];
+
+                    // Update status message based on device count
+                    if (this._sinks.length === 0) {
+                        this._setStatusMessage('No Bluetooth audio devices found');
+                    } else if (this._sinks.length === 1) {
+                        this._setStatusMessage('Connect one more Bluetooth device');
+                    } else {
+                        this._setStatusMessage(null);
+                    }
+
                     this._updateSinkSubmenus();
                     this._syncVolumeSliders();
                 } catch (err) {
                     console.error(`[Dual Audio Hub] Error parsing pw-dump: ${err}`);
+                    this._setStatusMessage('Error reading audio devices');
                 }
             });
         } catch (e) {
             console.error(`[Dual Audio Hub] Error refreshing sinks: ${e}`);
+            this._setStatusMessage('PipeWire tools not found');
         }
+    }
+
+    _setStatusMessage(msg) {
+        const toggle = this._systemIndicator && this._systemIndicator._toggle;
+        if (toggle) toggle.setStatus(msg);
     }
 
     _syncVolumeSliders() {
@@ -277,30 +349,49 @@ export default class DualAudioExtension extends Extension {
             if (this._sinks.length === 0) {
                 m1.addMenuItem(new PopupMenu.PopupMenuItem('No Bluetooth devices', { reactive: false }));
                 m2.addMenuItem(new PopupMenu.PopupMenuItem('No Bluetooth devices', { reactive: false }));
+                toggle.itemDevice1.label.text = '🎧 Device 1: Select';
+                toggle.itemDevice2.label.text = '🎧 Device 2: Select';
             } else {
                 this._sinks.forEach(sink => {
                     const check1 = (this._targetSink1 && this._targetSink1.name === sink.name) ? '✓ ' : '   ';
                     const it1 = new PopupMenu.PopupMenuItem(`${check1}🎧 ${sink.description}`);
                     it1.connect('activate', () => {
+                        // Prevent selecting the same device for both slots
+                        if (this._targetSink2 && this._targetSink2.name === sink.name) {
+                            Main.notify('Dual Audio Hub', 'This device is already selected as Device 2. Choose a different one.');
+                            return;
+                        }
                         this._targetSink1 = sink;
                         this._updateSinkSubmenus();
                         this._syncVolumeSliders();
+                        // If streaming, restart with new device
+                        if (this._isStreaming) this._restartStream();
                     });
                     m1.addMenuItem(it1);
 
                     const check2 = (this._targetSink2 && this._targetSink2.name === sink.name) ? '✓ ' : '   ';
                     const it2 = new PopupMenu.PopupMenuItem(`${check2}🎧 ${sink.description}`);
                     it2.connect('activate', () => {
+                        // Prevent selecting the same device for both slots
+                        if (this._targetSink1 && this._targetSink1.name === sink.name) {
+                            Main.notify('Dual Audio Hub', 'This device is already selected as Device 1. Choose a different one.');
+                            return;
+                        }
                         this._targetSink2 = sink;
                         this._updateSinkSubmenus();
                         this._syncVolumeSliders();
+                        // If streaming, restart with new device
+                        if (this._isStreaming) this._restartStream();
                     });
                     m2.addMenuItem(it2);
                 });
-            }
 
-            if (this._targetSink1) toggle.itemDevice1.label.text = `🎧 Device 1: ${this._targetSink1.description}`;
-            if (this._targetSink2) toggle.itemDevice2.label.text = `🎧 Device 2: ${this._targetSink2.description}`;
+                if (this._targetSink1) toggle.itemDevice1.label.text = `🎧 Device 1: ${this._targetSink1.description}`;
+                else toggle.itemDevice1.label.text = '🎧 Device 1: Select';
+
+                if (this._targetSink2) toggle.itemDevice2.label.text = `🎧 Device 2: ${this._targetSink2.description}`;
+                else toggle.itemDevice2.label.text = '🎧 Device 2: Select';
+            }
 
             toggle.subtitle = this._isStreaming ? 'Streaming' : 'Off';
         } catch (e) {
@@ -341,19 +432,63 @@ export default class DualAudioExtension extends Extension {
         } catch (_) {}
     }
 
+    _restartStream() {
+        if (!this._isStreaming) return;
+        this._stopDualStream();
+        // Brief delay before restarting to let PipeWire clean up
+        const tid = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
+            this._removeTimeout(tid);
+            this._startDualStream();
+            return GLib.SOURCE_REMOVE;
+        });
+        this._pendingTimeouts.push(tid);
+    }
+
+    _addTimeout(delayMs, callback) {
+        const tid = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delayMs, () => {
+            this._removeTimeout(tid);
+            callback();
+            return GLib.SOURCE_REMOVE;
+        });
+        this._pendingTimeouts.push(tid);
+        return tid;
+    }
+
+    _removeTimeout(tid) {
+        const idx = this._pendingTimeouts.indexOf(tid);
+        if (idx !== -1) this._pendingTimeouts.splice(idx, 1);
+    }
+
     _startDualStream() {
+        // Guard: already starting (rapid toggle protection)
+        if (this._startingStream) return;
+
+        // Guard: no devices selected
         if (!this._targetSink1 || !this._targetSink2) {
-            Main.notify('Dual Audio Hub', 'Connect at least two Bluetooth devices first.');
+            const msg = this._sinks.length < 2
+                ? 'Connect at least two Bluetooth devices first.'
+                : 'Select two different Bluetooth devices first.';
+            Main.notify('Dual Audio Hub', msg);
             if (this._systemIndicator && this._systemIndicator._toggle) {
                 this._systemIndicator._toggle.checked = false;
             }
             return;
         }
 
+        // Guard: same device selected for both
+        if (this._targetSink1.name === this._targetSink2.name) {
+            Main.notify('Dual Audio Hub', 'Device 1 and Device 2 must be different. Please select two separate devices.');
+            if (this._systemIndicator && this._systemIndicator._toggle) {
+                this._systemIndicator._toggle.checked = false;
+            }
+            return;
+        }
+
+        this._startingStream = true;
         this._stopDualStream();
 
         try {
-            // Master Loopback: Clean native PipeWire auto-negotiation
+            // Master Loopback: Creates a virtual sink that outputs to Target 1
             const proc1 = Gio.Subprocess.new(
                 [
                     'pw-loopback',
@@ -365,27 +500,36 @@ export default class DualAudioExtension extends Extension {
             );
             this._activeSubprocesses.push(proc1);
 
-            // Slave Loopback: Clean native PipeWire auto-negotiation
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
-                const proc2 = Gio.Subprocess.new(
-                    [
-                        'pw-loopback',
-                        '--name', 'Dual_Slave_Stream',
-                        '-i', 'node.latency=2048/48000',
-                        '--capture', 'Dual_Master_Sink',
-                        '--playback', this._targetSink2.name,
-                    ],
-                    Gio.SubprocessFlags.NONE
-                );
-                this._activeSubprocesses.push(proc2);
+            // Slave Loopback (after 500ms): Captures from Master Sink, outputs to Target 2
+            this._addTimeout(500, () => {
+                // Verify we're still supposed to be starting
+                if (!this._startingStream) return;
 
-                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
-                    this._fixSlaveStreamLinks();
-                    this._setDefaultMasterSink();
-                    return GLib.SOURCE_REMOVE;
-                });
+                try {
+                    const proc2 = Gio.Subprocess.new(
+                        [
+                            'pw-loopback',
+                            '--name', 'Dual_Slave_Stream',
+                            '-i', 'node.latency=2048/48000',
+                            '--capture', 'Dual_Master_Sink',
+                            '--playback', this._targetSink2.name,
+                        ],
+                        Gio.SubprocessFlags.NONE
+                    );
+                    this._activeSubprocesses.push(proc2);
 
-                return GLib.SOURCE_REMOVE;
+                    // Fix links and set default sink (after another 500ms)
+                    this._addTimeout(500, () => {
+                        this._fixSlaveStreamLinks();
+                        this._setDefaultMasterSink();
+                        this._startingStream = false;
+                    });
+                } catch (e) {
+                    console.error(`[Dual Audio Hub] Error starting slave stream: ${e}`);
+                    this._startingStream = false;
+                    this._stopDualStream();
+                    Main.notify('Dual Audio Hub', 'Failed to start audio stream. Check if PipeWire is running.');
+                }
             });
 
             this._isStreaming = true;
@@ -399,7 +543,9 @@ export default class DualAudioExtension extends Extension {
             Main.notify('Dual Audio Hub', `Streaming to ${this._targetSink1.description} & ${this._targetSink2.description} 🎧🎧`);
         } catch (e) {
             console.error(`[Dual Audio Hub] Error starting stream: ${e}`);
+            this._startingStream = false;
             this._stopDualStream();
+            Main.notify('Dual Audio Hub', 'Failed to start audio stream. Is pw-loopback installed?');
         }
     }
 
@@ -435,34 +581,38 @@ export default class DualAudioExtension extends Extension {
         this._monitorTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
             if (!this._isStreaming) return GLib.SOURCE_REMOVE;
 
-            const proc = Gio.Subprocess.new(
-                ['pw-dump'],
-                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENT
-            );
-            proc.communicate_utf8_async(null, null, (obj, res) => {
-                try {
-                    const [, stdout] = obj.communicate_utf8_finish(res);
-                    if (!stdout) return;
+            try {
+                const proc = Gio.Subprocess.new(
+                    ['pw-dump'],
+                    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENT
+                );
+                proc.communicate_utf8_async(null, null, (obj, res) => {
+                    try {
+                        const [, stdout] = obj.communicate_utf8_finish(res);
+                        if (!stdout) return;
 
-                    const data = JSON.parse(stdout);
-                    const currentNames = new Set();
-                    for (const item of data) {
-                        if (item && item.type === 'PipeWire:Interface:Node') {
-                            const props = (item.info && item.info.props) || {};
-                            if (props['node.name']) currentNames.add(props['node.name']);
+                        const data = JSON.parse(stdout);
+                        const currentNames = new Set();
+                        for (const item of data) {
+                            if (item && item.type === 'PipeWire:Interface:Node') {
+                                const props = (item.info && item.info.props) || {};
+                                if (props['node.name']) currentNames.add(props['node.name']);
+                            }
                         }
-                    }
 
-                    const t1Ok = this._targetSink1 && currentNames.has(this._targetSink1.name);
-                    const t2Ok = this._targetSink2 && currentNames.has(this._targetSink2.name);
+                        const t1Ok = this._targetSink1 && currentNames.has(this._targetSink1.name);
+                        const t2Ok = this._targetSink2 && currentNames.has(this._targetSink2.name);
 
-                    if (!t1Ok || !t2Ok) {
-                        const gone = !t1Ok ? this._targetSink1.description : this._targetSink2.description;
-                        Main.notify('Dual Audio Hub', `${gone} disconnected. Stopped dual stream.`);
-                        this._stopDualStream();
-                    }
-                } catch (_) {}
-            });
+                        if (!t1Ok || !t2Ok) {
+                            const gone = !t1Ok ? this._targetSink1.description : this._targetSink2.description;
+                            Main.notify('Dual Audio Hub', `${gone} disconnected. Stopped dual stream.`);
+                            this._stopDualStream();
+                            // Refresh device list so UI updates
+                            this._refreshSinks();
+                        }
+                    } catch (_) {}
+                });
+            } catch (_) {}
 
             return GLib.SOURCE_CONTINUE;
         });
@@ -486,6 +636,7 @@ export default class DualAudioExtension extends Extension {
         } catch (_) {}
 
         this._isStreaming = false;
+        this._startingStream = false;
         if (this._systemIndicator) {
             this._systemIndicator._toggle.checked = false;
             this._systemIndicator._toggle.subtitle = 'Off';
