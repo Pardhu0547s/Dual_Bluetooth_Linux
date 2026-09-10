@@ -1,12 +1,3 @@
-/*
- * Dual Audio Hub - GNOME Shell Extension
- * Compatible with GNOME 45, 46, 47, 48, 49, 50
- * Uses SystemIndicator + QuickMenuToggle for proper Quick Settings grid integration
- *
- * Handles: No devices, single device, mid-stream disconnects, rapid toggling,
- * same device selected twice, PipeWire failures, volume edge cases, and more.
- */
-
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as QuickSettings from 'resource:///org/gnome/shell/ui/quickSettings.js';
@@ -18,7 +9,6 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Clutter from 'gi://Clutter';
 
-// Volume slider menu item
 const VolumeSliderItem = GObject.registerClass(
 class VolumeSliderItem extends PopupMenu.PopupBaseMenuItem {
     _init(label) {
@@ -55,7 +45,6 @@ class VolumeSliderItem extends PopupMenu.PopupBaseMenuItem {
     }
 });
 
-// Quick Settings Toggle that appears in the grid alongside Wi-Fi, Bluetooth, etc.
 const DualAudioToggle = GObject.registerClass(
 class DualAudioToggle extends QuickSettings.QuickMenuToggle {
     _init() {
@@ -70,33 +59,27 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
             this.menu.setHeader('audio-headphones-symbolic', 'Dual Audio Hub', 'Dual Bluetooth Stream');
         } catch (_) {}
 
-        // Status bar (shows live state info inside the menu)
         this._statusItem = new PopupMenu.PopupMenuItem('', { reactive: false });
         this._statusItem.label.style = 'font-style: italic; color: #888;';
         this.menu.addMenuItem(this._statusItem);
         this._statusItem.visible = false;
 
-        // Device 1 (Primary) submenu
         this.itemDevice1 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 1: Select');
         this.menu.addMenuItem(this.itemDevice1);
 
-        // Volume slider for Device 1
         this.volSlider1 = new VolumeSliderItem('Vol 1');
         this.menu.addMenuItem(this.volSlider1);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Device 2 (Secondary) submenu
         this.itemDevice2 = new PopupMenu.PopupSubMenuMenuItem('🎧 Device 2: Select');
         this.menu.addMenuItem(this.itemDevice2);
 
-        // Volume slider for Device 2
         this.volSlider2 = new VolumeSliderItem('Vol 2');
         this.menu.addMenuItem(this.volSlider2);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Refresh button
         const refreshItem = new PopupMenu.PopupMenuItem('↻  Refresh Devices');
         refreshItem.connect('activate', () => {
             if (this._extensionRef) {
@@ -116,7 +99,6 @@ class DualAudioToggle extends QuickSettings.QuickMenuToggle {
     }
 });
 
-// SystemIndicator - the proper way to register into the Quick Settings grid
 const DualAudioIndicator = GObject.registerClass(
 class DualAudioIndicator extends QuickSettings.SystemIndicator {
     constructor(extensionObject) {
@@ -146,8 +128,8 @@ export default class DualAudioExtension extends Extension {
         this._targetSink2 = null;
         this._activeSubprocesses = [];
         this._monitorTimeoutId = 0;
-        this._startingStream = false;   // Guard against rapid toggle spam
-        this._pendingTimeouts = [];     // Track all GLib timeouts for cleanup
+        this._startingStream = false;
+        this._pendingTimeouts = [];
 
         this._systemIndicator = new DualAudioIndicator(this);
         this._systemIndicator._toggle._extensionRef = this;
@@ -160,7 +142,6 @@ export default class DualAudioExtension extends Extension {
             }
         });
 
-        // Wire up volume sliders with debounce to avoid spamming wpctl
         const toggle = this._systemIndicator._toggle;
         this._volDebounce1 = 0;
         this._volDebounce2 = 0;
@@ -194,11 +175,9 @@ export default class DualAudioExtension extends Extension {
     disable() {
         this._stopDualStream();
 
-        // Clean up volume debounce timers
         if (this._volDebounce1) { GLib.Source.remove(this._volDebounce1); this._volDebounce1 = 0; }
         if (this._volDebounce2) { GLib.Source.remove(this._volDebounce2); this._volDebounce2 = 0; }
 
-        // Clean up any pending timeouts
         for (const tid of this._pendingTimeouts) {
             try { GLib.Source.remove(tid); } catch (_) {}
         }
@@ -266,7 +245,6 @@ export default class DualAudioExtension extends Extension {
                             const mediaClass = props['media.class'] || '';
                             const nodeName = props['node.name'] || '';
 
-                            // Filter Bluetooth audio output sinks
                             const isBt = nodeName.includes('bluez') || props['device.api'] === 'bluez5';
                             if (mediaClass === 'Audio/Sink' && isBt && !nodeName.includes('Dual_Master_Sink')) {
                                 const desc = props['node.description'] || nodeName;
@@ -282,7 +260,6 @@ export default class DualAudioExtension extends Extension {
 
                     this._sinks = parsedSinks;
 
-                    // Auto-select devices if not yet selected (or if previously selected device is gone)
                     if (this._targetSink1 && !this._sinks.find(s => s.name === this._targetSink1.name)) {
                         this._targetSink1 = null;
                     }
@@ -293,7 +270,6 @@ export default class DualAudioExtension extends Extension {
                     if (!this._targetSink1 && this._sinks.length > 0) this._targetSink1 = this._sinks[0];
                     if (!this._targetSink2 && this._sinks.length > 1) this._targetSink2 = this._sinks[1];
 
-                    // Update status message based on device count
                     if (this._sinks.length === 0) {
                         this._setStatusMessage('No Bluetooth audio devices found');
                     } else if (this._sinks.length === 1) {
@@ -356,7 +332,6 @@ export default class DualAudioExtension extends Extension {
                     const check1 = (this._targetSink1 && this._targetSink1.name === sink.name) ? '✓ ' : '   ';
                     const it1 = new PopupMenu.PopupMenuItem(`${check1}🎧 ${sink.description}`);
                     it1.connect('activate', () => {
-                        // Prevent selecting the same device for both slots
                         if (this._targetSink2 && this._targetSink2.name === sink.name) {
                             Main.notify('Dual Audio Hub', 'This device is already selected as Device 2. Choose a different one.');
                             return;
@@ -364,7 +339,6 @@ export default class DualAudioExtension extends Extension {
                         this._targetSink1 = sink;
                         this._updateSinkSubmenus();
                         this._syncVolumeSliders();
-                        // If streaming, restart with new device
                         if (this._isStreaming) this._restartStream();
                     });
                     m1.addMenuItem(it1);
@@ -372,7 +346,6 @@ export default class DualAudioExtension extends Extension {
                     const check2 = (this._targetSink2 && this._targetSink2.name === sink.name) ? '✓ ' : '   ';
                     const it2 = new PopupMenu.PopupMenuItem(`${check2}🎧 ${sink.description}`);
                     it2.connect('activate', () => {
-                        // Prevent selecting the same device for both slots
                         if (this._targetSink1 && this._targetSink1.name === sink.name) {
                             Main.notify('Dual Audio Hub', 'This device is already selected as Device 1. Choose a different one.');
                             return;
@@ -380,7 +353,6 @@ export default class DualAudioExtension extends Extension {
                         this._targetSink2 = sink;
                         this._updateSinkSubmenus();
                         this._syncVolumeSliders();
-                        // If streaming, restart with new device
                         if (this._isStreaming) this._restartStream();
                     });
                     m2.addMenuItem(it2);
@@ -423,7 +395,6 @@ export default class DualAudioExtension extends Extension {
                         }
                     }
 
-                    // Enforce monitor port links between Master Sink & Slave Stream
                     Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_FL'], Gio.SubprocessFlags.NONE);
                     Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FR', 'input.Dual_Slave_Stream:input_FR'], Gio.SubprocessFlags.NONE);
                     Gio.Subprocess.new(['pw-link', 'Dual_Master_Sink:monitor_FL', 'input.Dual_Slave_Stream:input_MONO'], Gio.SubprocessFlags.NONE);
@@ -435,7 +406,6 @@ export default class DualAudioExtension extends Extension {
     _restartStream() {
         if (!this._isStreaming) return;
         this._stopDualStream();
-        // Brief delay before restarting to let PipeWire clean up
         const tid = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
             this._removeTimeout(tid);
             this._startDualStream();
@@ -460,10 +430,8 @@ export default class DualAudioExtension extends Extension {
     }
 
     _startDualStream() {
-        // Guard: already starting (rapid toggle protection)
         if (this._startingStream) return;
 
-        // Guard: no devices selected
         if (!this._targetSink1 || !this._targetSink2) {
             const msg = this._sinks.length < 2
                 ? 'Connect at least two Bluetooth devices first.'
@@ -475,7 +443,6 @@ export default class DualAudioExtension extends Extension {
             return;
         }
 
-        // Guard: same device selected for both
         if (this._targetSink1.name === this._targetSink2.name) {
             Main.notify('Dual Audio Hub', 'Device 1 and Device 2 must be different. Please select two separate devices.');
             if (this._systemIndicator && this._systemIndicator._toggle) {
@@ -488,7 +455,6 @@ export default class DualAudioExtension extends Extension {
         this._stopDualStream();
 
         try {
-            // Master Loopback: Creates a virtual sink that outputs to Target 1
             const proc1 = Gio.Subprocess.new(
                 [
                     'pw-loopback',
@@ -500,9 +466,7 @@ export default class DualAudioExtension extends Extension {
             );
             this._activeSubprocesses.push(proc1);
 
-            // Slave Loopback (after 500ms): Captures from Master Sink, outputs to Target 2
             this._addTimeout(500, () => {
-                // Verify we're still supposed to be starting
                 if (!this._startingStream) return;
 
                 try {
@@ -518,7 +482,6 @@ export default class DualAudioExtension extends Extension {
                     );
                     this._activeSubprocesses.push(proc2);
 
-                    // Fix links and set default sink (after another 500ms)
                     this._addTimeout(500, () => {
                         this._fixSlaveStreamLinks();
                         this._setDefaultMasterSink();
@@ -564,7 +527,6 @@ export default class DualAudioExtension extends Extension {
                         if (item && item.type === 'PipeWire:Interface:Node') {
                             const props = (item.info && item.info.props) || {};
                             if (props['node.name'] === 'Dual_Master_Sink') {
-                                // Set system default sink to Dual_Master_Sink
                                 Gio.Subprocess.new(['wpctl', 'set-default', String(item.id)], Gio.SubprocessFlags.NONE);
                                 break;
                             }
@@ -607,7 +569,6 @@ export default class DualAudioExtension extends Extension {
                             const gone = !t1Ok ? this._targetSink1.description : this._targetSink2.description;
                             Main.notify('Dual Audio Hub', `${gone} disconnected. Stopped dual stream.`);
                             this._stopDualStream();
-                            // Refresh device list so UI updates
                             this._refreshSinks();
                         }
                     } catch (_) {}
