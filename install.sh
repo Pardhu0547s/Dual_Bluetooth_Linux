@@ -11,9 +11,6 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gnome_extension"
 mkdir -p "$INSTALL_DIR"
 echo "Copying GNOME extension files to $INSTALL_DIR..."
 cp -r "$SRC_DIR/"* "$INSTALL_DIR/"
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/icon.png" ]; then
-    cp "$(dirname "${BASH_SOURCE[0]}")/icon.png" "$INSTALL_DIR/icon.png"
-fi
 
 gsettings set org.gnome.shell disable-extension-version-validation true 2>/dev/null || true
 
