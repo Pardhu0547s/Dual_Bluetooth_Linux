@@ -406,6 +406,13 @@ export default class DualAudioExtension extends Extension {
                         this._targetSink2 = btSinks.length > 1 ? btSinks[1] : (this._sinks.find(s => s.name !== (this._targetSink1 && this._targetSink1.name)) || null);
                     }
 
+                    if (this._targetSink1 && this._targetSink2 && this._targetSink1.name === this._targetSink2.name) {
+                        const altSink = this._sinks.find(s => s.name !== this._targetSink1.name);
+                        if (altSink) {
+                            this._targetSink2 = altSink;
+                        }
+                    }
+
                     if (this._sinks.length === 0) {
                         this._setStatusMessage('No audio devices found');
                     } else if (btSinks.length === 0) {
