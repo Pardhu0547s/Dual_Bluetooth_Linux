@@ -559,9 +559,6 @@ export default class DualAudioExtension extends Extension {
         this._startingStream = true;
         this._stopDualStream();
 
-        this._ensureA2dpProfile(this._targetSink1);
-        this._ensureA2dpProfile(this._targetSink2);
-
         try {
             const proc1 = Gio.Subprocess.new(
                 [
